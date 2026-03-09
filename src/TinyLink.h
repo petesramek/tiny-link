@@ -1,3 +1,8 @@
+/**
+ * @file TinyLink.h
+ * @brief Main template engine for the TinyLink protocol.
+ */
+
 #ifndef TINY_LINK_H
 #define TINY_LINK_H
 
@@ -6,19 +11,28 @@
 
 namespace tinylink {
 
+/**
+ * @brief High-efficiency, template-based serial protocol engine.
+ * 
+ * @tparam T The struct type to be transmitted. Must be a POD (Plain Old Data) type.
+ * @tparam Adapter The hardware abstraction layer (e.g., TinyArduinoAdapter).
+ */
 template <typename T, typename Adapter>
 class TinyLink {
 public:
+    /**
+     * @brief Signature for the asynchronous reception callback.
+     * @param data A constant reference to the verified received struct.
+     */
     typedef void (*ReceiverCallback)(const T& data);
 
 private:
-    // --- Compile-Time Driver Validation ---
     void _static_interface_check() {
         Adapter* a = (Adapter*)0;
         (void)a->isOpen(); (void)a->available(); (void)a->read(); (void)a->millis(); a->write((uint8_t)0);
     }
 
-    // --- Fletcher-16 Checksum ---
+    /** @brief Fletcher-16 Checksum: Optimized for 8-bit CPUs. */
     inline uint16_t fletcher16(const uint8_t* data, uint8_t len) {
         uint16_t sum1 = 0xff, sum2 = 0xff;
         while (len) {
@@ -31,7 +45,7 @@ private:
         return (sum2 << 8) | sum1;
     }
 
-    // --- COBS Encoding ---
+    /** @brief COBS Encoding: Eliminates 0x00 from payload. */
     size_t cobs_encode(const uint8_t* src, size_t len, uint8_t* dst) {
         size_t read_idx = 0, write_idx = 1, code_idx = 0;
         uint8_t code = 1;
@@ -55,7 +69,7 @@ private:
         return write_idx;
     }
 
-    // --- COBS Decoding ---
+    /** @brief COBS Decoding: Restores original data from encoded frame. */
     size_t cobs_decode(const uint8_t* src, size_t len, uint8_t* dst) {
         size_t read_idx = 0, write_idx = 0;
         while (read_idx < len) {
@@ -68,14 +82,13 @@ private:
     }
 
     Adapter* _hw;
-    T _data;                         // Live, verified data
+    T _data;                         
     TinyStats _stats = {0, 0, 0};
     ReceiverCallback _onReceive = nullptr;
 
-    // --- Memory Optimized Buffers ---
     static const size_t PLAIN_SIZE = 3 + sizeof(T) + 2; 
-    uint8_t _pBuf[PLAIN_SIZE];       // "Work Buffer" for decoding/integrity checks
-    uint8_t _rawBuf[PLAIN_SIZE + 2]; // Encoded buffer
+    uint8_t _pBuf[PLAIN_SIZE];       
+    uint8_t _rawBuf[PLAIN_SIZE + 2]; 
     uint8_t _rawIdx = 0;
 
     uint8_t _currType = 0, _currSeq = 0, _nextSeq = 0;
@@ -84,26 +97,49 @@ private:
     unsigned long _timeout = 250;
 
 public:
+    /**
+     * @brief Construct a new TinyLink object.
+     * @param hw Reference to a hardware adapter (e.g., TinyArduinoAdapter).
+     */
     TinyLink(Adapter& hw) : _hw(&hw) {
         static_assert(sizeof(T) <= 240, "TinyLink: Payload exceeds 240 bytes (COBS limit).");
         (void)&TinyLink::_static_interface_check;
     }
 
-    // --- Config & Lifecycle ---
+    /** @brief Registers a callback to be executed upon valid packet reception. */
     void onReceive(ReceiverCallback cb) { _onReceive = cb; }
+    
+    /** @brief Sets the inter-byte timeout for frame accumulation. */
     void setTimeout(unsigned long ms) { _timeout = ms; }
+    
+    /** @brief Resets packet, error, and timeout counters. */
     void clearStats() { memset(&_stats, 0, sizeof(TinyStats)); }
 
-    // --- Status & Data ---
+    /** @brief Returns true if the hardware adapter is open/connected. */
     bool connected() { return _hw->isOpen(); }
+    
+    /** @brief Returns a reference to the current link statistics. */
     const TinyStats& getStats() { return _stats; }
+    
+    /** @brief Checks if a new verified packet is available to peek. */
     bool available() { return _hasNew; }
+    
+    /** @brief Returns a constant reference to the most recent valid payload. */
     const T& peek() { return _data; }
+    
+    /** @brief Clears the available flag to allow for the next packet. */
     void flush() { _hasNew = false; }
+    
+    /** @brief Returns the message type of the current packet. */
     uint8_t type() { return _currType; }
+    
+    /** @brief Returns the sequence number of the current packet. */
     uint8_t seq()  { return _currSeq; }
 
-    // --- Core Engine ---
+    /**
+     * @brief Processes incoming serial data and manages the state machine.
+     * Must be called frequently in the main loop.
+     */
     void update() {
         if (!_hw->isOpen() || _hasNew) return;
 
@@ -120,7 +156,6 @@ public:
 
             if (c == 0x00) { 
                 if (_rawIdx >= 5) {
-                    // Decode into "Work Buffer" to isolate from live data
                     size_t dLen = cobs_decode(_rawBuf, _rawIdx, _pBuf);
                     
                     if (dLen == PLAIN_SIZE) {
@@ -128,7 +163,6 @@ public:
                         uint16_t recv = (uint16_t)_pBuf[PLAIN_SIZE - 2] | ((uint16_t)_pBuf[PLAIN_SIZE - 1] << 8);
                         
                         if (calc == recv) {
-                            // Only overwrite live data AFTER verification
                             _currType = _pBuf[0];
                             _currSeq  = _pBuf[1];
                             memcpy(&_data, &_pBuf[3], sizeof(T));
@@ -150,10 +184,14 @@ public:
         }
     }
 
+    /**
+     * @brief Encodes and transmits the provided payload.
+     * @param type User-defined message type.
+     * @param payload The data struct to transmit.
+     */
     void send(uint8_t type, const T& payload) {
         if (!_hw->isOpen()) return;
         
-        // Prepare plain frame in Work Buffer to save stack RAM
         _pBuf[0] = type;
         _pBuf[1] = _nextSeq++;
         _pBuf[2] = (uint8_t)sizeof(T);
@@ -163,7 +201,6 @@ public:
         _pBuf[PLAIN_SIZE - 2] = chk & 0xFF;
         _pBuf[PLAIN_SIZE - 1] = (chk >> 8) & 0xFF;
 
-        // Encode from Work Buffer into Raw Buffer
         uint8_t encoded[PLAIN_SIZE + 2];
         size_t eLen = cobs_encode(_pBuf, PLAIN_SIZE, encoded);
 
@@ -175,4 +212,4 @@ public:
 
 } // namespace tinylink
 
-#endif
+#endif // TINY_LINK_H
