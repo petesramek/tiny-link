@@ -2,109 +2,28 @@
 #define TINY_WINDOWS_ADAPTER_H
 
 #include <windows.h>
-#include <stdint.h>
-#include <iostream> // For error reporting
 
 class TinyWindowsAdapter {
 private:
-    HANDLE _hSerial;
-    bool _connected;
-
+    HANDLE _h;
+    bool _ok;
 public:
-    TinyWindowsAdapter(const char* portName, DWORD baud = CBR_9600) : _connected(false) {
-        // 1. Attempt to open the serial port
-        _hSerial = CreateFileA(portName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-
-        if (_hSerial == INVALID_HANDLE_VALUE) {
-            DWORD error = GetLastError();
-            if (error == ERROR_ACCESS_DENIED) {
-                std::cerr << "TinyLink Error: Access denied. Is " << portName << " already open in another app?" << std::endl;
-            } else if (error == ERROR_FILE_NOT_FOUND) {
-                std::cerr << "TinyLink Error: Port " << portName << " not found." << std::endl;
-            } else {
-                std::cerr << "TinyLink Error: Failed to open port. Code: " << error << std::endl;
-            }
-            return;
-        }
-
-        // 2. Configure port settings (Baud, Parity, etc.)
-        DCB dcbSerialParams = {0};
-        dcbSerialParams.DCBlength = sizeof(dcbSerialParams);
-        if (!GetCommState(_hSerial, &dcbSerialParams)) {
-            std::cerr << "TinyLink Error: Could not get serial state." << std::endl;
-            CloseHandle(_hSerial);
-            return;
-        }
-
-        dcbSerialParams.BaudRate = baud;
-        dcbSerialParams.ByteSize = 8;
-        dcbSerialParams.StopBits = ONESTOPBIT;
-        dcbSerialParams.Parity   = NOPARITY;
-
-        if (!SetCommState(_hSerial, &dcbSerialParams)) {
-            std::cerr << "TinyLink Error: Could not set serial parameters." << std::endl;
-            CloseHandle(_hSerial);
-            return;
-        }
-
-        // 3. Set non-blocking timeouts
-        COMMTIMEOUTS timeouts = {0};
-        timeouts.ReadIntervalTimeout         = MAXDWORD; // Return immediately if no data
-        timeouts.ReadTotalTimeoutMultiplier  = 0;
-        timeouts.ReadTotalTimeoutConstant    = 0;
-        timeouts.WriteTotalTimeoutMultiplier = 0;
-        timeouts.WriteTotalTimeoutConstant   = 0;
-
-        if (!SetCommTimeouts(_hSerial, &timeouts)) {
-            std::cerr << "TinyLink Error: Could not set timeouts." << std::endl;
-            CloseHandle(_hSerial);
-            return;
-        }
-
-        _connected = true;
-    }
-
-    ~TinyWindowsAdapter() {
-        if (_hSerial != INVALID_HANDLE_VALUE) {
-            CloseHandle(_hSerial);
+    TinyWindowsAdapter(const char* port, DWORD baud = CBR_9600) : _ok(false) {
+        _h = CreateFileA(port, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        if (_h != INVALID_HANDLE_VALUE) {
+            DCB dcb = {0}; dcb.DCBlength = sizeof(dcb);
+            GetCommState(_h, &dcb); dcb.BaudRate = baud; dcb.ByteSize = 8;
+            SetCommState(_h, &dcb);
+            COMMTIMEOUTS ct = {MAXDWORD, 0, 0, 0, 0}; SetCommTimeouts(_h, &ct);
+            _ok = true;
         }
     }
-
-    inline bool isOpen() { return _connected; }
-
-    int available() {
-        if (!_connected) return 0;
-        COMSTAT comStat;
-        DWORD errors;
-        ClearCommError(_hSerial, &errors, &comStat);
-        return (int)comStat.cbInQue;
-    }
-
-    int read() {
-        if (!_connected) return -1;
-        uint8_t b;
-        DWORD bytesRead;
-        if (ReadFile(_hSerial, &b, 1, &bytesRead, NULL) && bytesRead > 0) {
-            return (int)b;
-        }
-        return -1;
-    }
-
-    void write(uint8_t c) {
-        if (!_connected) return;
-        DWORD bytesWritten;
-        WriteFile(_hSerial, &c, 1, &bytesWritten, NULL);
-    }
-
-    void write(const uint8_t* b, size_t l) {
-        if (!_connected) return;
-        DWORD bytesWritten;
-        WriteFile(_hSerial, b, (DWORD)l, &bytesWritten, NULL);
-    }
-
-    unsigned long millis() {
-        return GetTickCount(); 
-    }
+    ~TinyWindowsAdapter() { if (_h != INVALID_HANDLE_VALUE) CloseHandle(_h); }
+    inline bool isOpen()   { return _ok; }
+    inline int available() { COMSTAT s; DWORD e; ClearCommError(_h, &e, &s); return s.cbInQue; }
+    inline int read()      { uint8_t b; DWORD r; return (ReadFile(_h, &b, 1, &r, NULL) && r > 0) ? b : -1; }
+    inline void write(uint8_t c) { DWORD w; WriteFile(_h, &c, 1, &w, NULL); }
+    inline void write(const uint8_t* b, size_t l) { DWORD w; WriteFile(_h, b, (DWORD)l, &w, NULL); }
+    inline unsigned long millis() { return GetTickCount(); }
 };
-
 #endif
