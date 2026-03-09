@@ -1,5 +1,5 @@
-#include <../src/TinyLink.h>
-#include <../src/adapters/TinyArduinoAdapter.h>
+#include <../../src/TinyLink.h>
+#include <../../src/adapters/TinyArduinoAdapter.h>
 #include "SharedData.h"
 
 TinyArduinoAdapter adapter(Serial);
