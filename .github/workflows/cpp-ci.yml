@@ -36,11 +36,27 @@ jobs:
 
       - name: Verify Build (MH-Tiny88 / AVR)
         run: |
-          printf "#include <TinyLink.h>\n#include <adapters/TinyArduinoAdapter.h>\nstruct Data { int x; };\nTinyArduinoAdapter hw(Serial);\nTinyLink<Data, TinyArduinoAdapter> link(hw);\nvoid setup(){} void loop(){ link.update(); }" > verify.cpp
+          cat <<EOF > verify.cpp
+          #include <TinyLink.h>
+          #include <adapters/TinyArduinoAdapter.h>
+          struct Data { int x; };
+          TinyArduinoAdapter hw(Serial);
+          TinyLink<Data, TinyArduinoAdapter> link(hw);
+          void setup(){} 
+          void loop(){ link.update(); }
+          EOF
           pio ci --lib="." --board=attiny88 verify.cpp
 
       - name: Verify Build (ESP-M3 / ESP8266)
         run: |
-          echo '#include <TinyLink.h>\n#include <adapters/TinyArduinoAdapter.h>\nstruct Data { int x; };\nTinyArduinoAdapter hw(Serial);\nTinyLink<Data, TinyArduinoAdapter> link(hw);\nvoid setup(){} void loop(){ link.update(); }' > verify_esp.cpp
+          cat <<EOF > verify_esp.cpp
+          #include <TinyLink.h>
+          #include <adapters/TinyArduinoAdapter.h>
+          struct Data { int x; };
+          TinyArduinoAdapter hw(Serial);
+          TinyLink<Data, TinyArduinoAdapter> link(hw);
+          void setup(){} 
+          void loop(){ link.update(); }
+          EOF
           pio ci --lib="." --board=esp01_1m verify_esp.cpp
 
