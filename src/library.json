@@ -1,0 +1,27 @@
+{
+  "name": "TinyLink",
+  "version": "1.0.0",
+  "description": "A high-efficiency, template-based serial protocol for reliable UART communication between MCUs and PCs. Optimized for ATtiny88 and ESP series.",
+  "keywords": "communication, protocol, uart, serial, attiny, esp8266, esp32, stm32, reliable",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com"
+  },
+  "authors": [
+    {
+      "name": "Pete Sramek",
+      "maintainer": true
+    }
+  ],
+  "license": "MIT",
+  "frameworks": ["arduino", "espidf", "native", "stm32cube"],
+  "platforms": ["atmelavr", "espressif8266", "espressif32", "ststm32", "native"],
+  "build": {
+    "includeDir": "src",
+    "srcDir": "src",
+    "srcFilter": [
+      "+<*>",
+      "+<adapters/*>"
+    ]
+  }
+}
