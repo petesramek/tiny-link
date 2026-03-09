@@ -94,6 +94,25 @@ void test_cobs_burst(void) {
     TEST_ASSERT_EQUAL_UINT32(200, link.peek().uptime);
 }
 
+bool callbackFired = false;
+void testCallback(const TestPayload& data) {
+    callbackFired = true;
+}
+
+void test_callback_functionality(void) {
+    link.onReceive(testCallback);
+    callbackFired = false;
+
+    TestPayload data = { 55, 5.5f };
+    link.send(TYPE_DATA, data);
+
+    while(adapter.available() > 0 && !link.available()) {
+        link.update();
+    }
+
+    TEST_ASSERT_TRUE_MESSAGE(callbackFired, "Callback should have been triggered");
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_cobs_loopback);

@@ -4,21 +4,30 @@
 #include <stdint.h>
 #include <string.h>
 
-const uint8_t SOH = 0x01, STX = 0x02, ETX = 0x03, ACK = 0x06, NAK = 0x15, CAN = 0x18;
+// Message Types
+const uint8_t TYPE_DATA  = 'D';
+const uint8_t TYPE_DEBUG = 'g';
+const uint8_t TYPE_REQ   = 'R';
+const uint8_t TYPE_DONE  = 'K';
 
-const uint8_t TYPE_DATA = 'D', TYPE_DEBUG = 'g', TYPE_REQ = 'R', TYPE_DONE = 'K';
-
-enum class TinyStatus { STATUS_OK = 0, ERR_TIMEOUT, ERR_CRC };
-
-enum class TinyState { 
-    WAIT_FOR_SYNC,  // Looking for 0x00
-    IN_FRAME        // Collecting bytes until next 0x00
+// Protocol Status
+enum class TinyStatus { 
+    STATUS_OK = 0, 
+    ERR_TIMEOUT, 
+    ERR_CRC 
 };
 
+// Simplified State Machine for COBS
+enum class TinyState { 
+    WAIT_FOR_SYNC,  // Searching for 0x00 delimiter
+    IN_FRAME        // Accumulating bytes until next 0x00
+};
+
+// Telemetry
 struct TinyStats {
-    uint32_t packets;
-    uint16_t crcErrs;  
-    uint16_t timeouts; 
+    uint32_t packets;  // Successfully received
+    uint16_t crcErrs;  // Checksum/COBS failures
+    uint16_t timeouts; // Interrupted frames
 };
 
 #endif
