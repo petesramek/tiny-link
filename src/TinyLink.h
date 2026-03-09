@@ -91,10 +91,10 @@ private:
     T _data;                         
     TinyStats _stats = {0, 0, 0};
     ReceiverCallback _onReceive = nullptr;
-
+     
     static const size_t PLAIN_SIZE = 3 + sizeof(T) + 2; 
-    uint8_t _pBuf[PLAIN_SIZE];       
-    uint8_t _rawBuf[PLAIN_SIZE + 2]; 
+    uint8_t _pBuf[PLAIN_SIZE];     
+    uint8_t _rawBuf[PLAIN_SIZE + 64]; 
     uint8_t _rawIdx = 0;
 
     uint8_t _currType = 0, _currSeq = 0, _nextSeq = 0;
@@ -180,10 +180,16 @@ public:
 
                             if (_onReceive) _onReceive(_data);
                             return; 
-                        } else { _stats.crcErrs++; }
-                    } else { _stats.crcErrs++; }
+                        } else { 
+                            _stats.crcErrs++; // Bad Checksum
+                        }
+                    } else { 
+                        _stats.crcErrs++; // Valid COBS but wrong length (Structural Error)
+                    }
                 }
-                _rawIdx = 0;
+                // Note: We don't increment crcErrs if _rawIdx < 5 
+                // because that is likely just a noise spike or double 0x00.
+                _rawIdx = 0; 
             } else {
                 if (_rawIdx < sizeof(_rawBuf)) _rawBuf[_rawIdx++] = c;
                 else _rawIdx = 0; 
