@@ -35,7 +35,12 @@ jobs:
         run: pip install -U platformio
 
       - name: Verify Build (MH-Tiny88 / AVR)
-        run: pio ci --lib="." --board=attiny88 src/TinyLink.h
+        run: |
+          echo '#include <TinyLink.h>\n#include <adapters/TinyArduinoAdapter.h>\nstruct Data { int x; };\nTinyArduinoAdapter hw(Serial);\nTinyLink<Data, TinyArduinoAdapter> link(hw);\nvoid setup(){} void loop(){ link.update(); }' > verify.cpp
+          pio ci --lib="." --board=attiny88 verify.cpp
 
       - name: Verify Build (ESP-M3 / ESP8266)
-        run: pio ci --lib="." --board=esp01_1m src/TinyLink.h
+        run: |
+          echo '#include <TinyLink.h>\n#include <adapters/TinyArduinoAdapter.h>\nstruct Data { int x; };\nTinyArduinoAdapter hw(Serial);\nTinyLink<Data, TinyArduinoAdapter> link(hw);\nvoid setup(){} void loop(){ link.update(); }' > verify_esp.cpp
+          pio ci --lib="." --board=esp01_1m verify_esp.cpp
+
