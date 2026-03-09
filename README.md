@@ -29,13 +29,13 @@
 
 ### 1. Define your Data
 
-Both devices must share an identical `struct`.
+Both devices must share an identical `struct` with identical size that is ensured by `__attribute__((packed))`.
 
 ```cpp
 struct MyData {
   uint32_t uptime;
   float temperature;
-};
+} __attribute__((packed));
 ```
 
 ### 2. Implementation
