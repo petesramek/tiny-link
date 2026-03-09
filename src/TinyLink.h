@@ -165,17 +165,5 @@ public:
         _hw->write(checksum(pRaw, len));
         _hw->write(ACK);
     }
-
-    TinyStatus getStatus() {
-        return _status;
-    }
-
-    TinyState getState() {
-        return _state;
-    }
-
-    void clearStats() { 
-        memset(&_stats, 0, sizeof(TinyStats));
-    }
 };
 #endif
