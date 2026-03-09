@@ -22,42 +22,51 @@ void setUp(void) {
     adapter.setMillis(0);
 }
 
-// TEST: Verify Fletcher-16 Loopback
-void test_fletcher16_loopback(void) {
-    TestPayload data = { 54321, 123.456f };
+// 1. TEST: Basic Loopback with COBS Encoding/Decoding
+void test_cobs_loopback(void) {
+    TestPayload data = { 98765, 3.1415f };
     link.send(TYPE_DATA, data);
 
-    // Drain buffer
-    while(adapter.available() > 0) {
+    // Update until packet is processed
+    while(adapter.available() > 0 && !link.available()) {
         link.update();
     }
 
-    TEST_ASSERT_TRUE(link.available());
+    TEST_ASSERT_TRUE_MESSAGE(link.available(), "COBS packet should be available");
     TEST_ASSERT_EQUAL_UINT32(data.uptime, link.peek().uptime);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, data.value, link.peek().value);
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, data.value, link.peek().value);
 }
 
-// TEST: Verify Header Corruption (Fletcher-16 detection)
-void test_header_fletcher_corruption(void) {
-    // [SOH][Type][Seq][Len][H-CHK_L][H-CHK_H]
-    uint8_t badHeader[] = { SOH, 'D', 0x01, 0x04, 0x00, 0x00 }; // Forced wrong CHK
-    adapter.inject(badHeader, sizeof(badHeader));
-    
+// 2. TEST: Resync after junk data (The power of COBS)
+void test_cobs_resync(void) {
+    // Inject random junk bytes that do NOT contain 0x00
+    uint8_t junk[] = { 0xFF, 0xAA, 0x12, 0x45 };
+    adapter.inject(junk, sizeof(junk));
     link.update();
-    
-    TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
-}
 
-// TEST: Verify Payload Corruption (Fletcher-16 detection)
-void test_payload_fletcher_corruption(void) {
+    // Now inject a perfectly valid COBS packet
     TestPayload data = { 1, 1.0f };
     link.send(TYPE_DATA, data);
-    
-    // Manually corrupt the very last byte of the buffer (P-CHK_H)
+
+    while(adapter.available() > 0 && !link.available()) {
+        link.update();
+    }
+
+    TEST_ASSERT_TRUE_MESSAGE(link.available(), "Should sync at 0x00 and ignore junk");
+    TEST_ASSERT_EQUAL_UINT32(1, link.peek().uptime);
+}
+
+// 3. TEST: CRC Failure in COBS Frame
+void test_cobs_crc_failure(void) {
+    TestPayload data = { 10, 2.0f };
+    link.send(TYPE_DATA, data);
+
+    // Corrupt the Fletcher-16 bytes (last two bytes before the trailing 0x00)
     std::vector<uint8_t>& buf = adapter.getRawBuffer();
-    buf[buf.size() - 2] ^= 0xFF; // Flip bits in the checksum
-    
+    if (buf.size() > 3) {
+        buf[buf.size() - 2] ^= 0xFF; // Flip bits in Fletcher-16
+    }
+
     while(adapter.available() > 0) {
         link.update();
     }
@@ -66,30 +75,30 @@ void test_payload_fletcher_corruption(void) {
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
 
-// TEST: Multi-packet burst with Flow Control
-void test_burst_with_fletcher(void) {
-    TestPayload p1 = {1, 1.1f};
-    TestPayload p2 = {2, 2.2f};
+// 4. TEST: Burst handling with Delimiters
+void test_cobs_burst(void) {
+    TestPayload p1 = {100, 1.0f};
+    TestPayload p2 = {200, 2.0f};
     
     link.send(TYPE_DATA, p1);
     link.send(TYPE_DATA, p2);
     
     // Process P1
     while(!link.available()) link.update();
-    TEST_ASSERT_EQUAL_UINT32(1, link.peek().uptime);
+    TEST_ASSERT_EQUAL_UINT32(100, link.peek().uptime);
     link.flush();
     
     // Process P2
     while(!link.available() && adapter.available() > 0) link.update();
     TEST_ASSERT_TRUE(link.available());
-    TEST_ASSERT_EQUAL_UINT32(2, link.peek().uptime);
+    TEST_ASSERT_EQUAL_UINT32(200, link.peek().uptime);
 }
 
 int main(int argc, char **argv) {
     UNITY_BEGIN();
-    RUN_TEST(test_fletcher16_loopback);
-    RUN_TEST(test_header_fletcher_corruption);
-    RUN_TEST(test_payload_fletcher_corruption);
-    RUN_TEST(test_burst_with_fletcher);
+    RUN_TEST(test_cobs_loopback);
+    RUN_TEST(test_cobs_resync);
+    RUN_TEST(test_cobs_crc_failure);
+    RUN_TEST(test_cobs_burst);
     return UNITY_END();
 }
