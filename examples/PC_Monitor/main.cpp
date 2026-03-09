@@ -1,6 +1,9 @@
 #include <iostream>
 #include <iomanip>
 #include "TinyLink.h"
+#include "adapters/TinyArduinoAdapter.h"
+
+using namespace tinylink;
 
 // 1. Choose the correct adapter for your OS
 #ifdef _WIN32
@@ -12,8 +15,6 @@
     typedef TinyPosixAdapter PCAdapter;
     const char* PORT = "/dev/ttyUSB0"; // Change to your TTY device
 #endif
-
-#include "../Basic_Duplex/SharedData.h" // Reuse our shared struct
 
 // 2. Callback for when the MCU sends data to the PC
 void onMcuData(const MyData& data) {

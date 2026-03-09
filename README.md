@@ -41,17 +41,43 @@ struct MyData {
 
 ### 2. Implementation
 
-**Option A: Callback Style (Recommended)**
+TinyLink uses the tinylink namespace to prevent naming conflicts with other libraries.
 
-Best for clean, event-driven code. The handler triggers automatically inside `update()`.
+#### 2.1 Namespace
+
+**For Arduino/Simplified Sketches**
+
+Add using namespace tinylink; after your includes to use the library classes directly.
 
 ```cpp
 #include <TinyLink.h>
 #include <adapters/TinyArduinoAdapter.h>
 
+using namespace tinylink; // <--- Simplifies your code
+
 TinyArduinoAdapter adapter(Serial);
 TinyLink<MyData, TinyArduinoAdapter> link(adapter);
+```
 
+** For Professional C++ / Large Projects **
+
+It is recommended to use the explicit namespace prefix to ensure absolute symbol safety.
+
+```cpp
+#include <TinyLink.h>
+#include <adapters/TinyArduinoAdapter.h>
+
+tinylink::TinyPosixAdapter adapter("/dev/ttyUSB0", B9600);
+tinylink::TinyLink<MyData, tinylink::TinyPosixAdapter> link(adapter);
+```
+
+#### 2.2 Usage
+
+**Option A: Callback Style (Recommended)**
+
+Best for clean, event-driven code. The handler triggers automatically inside `update()`.
+
+```cpp
 void onReceive(const MyData& data) {
     Serial.println(data.temperature);
 }
@@ -70,12 +96,6 @@ void loop() {
 Best for manual control or integrating into existing linear logic.
 
 ```cpp
-#include <TinyLink.h>
-#include <adapters/TinyArduinoAdapter.h>
-
-TinyArduinoAdapter adapter(Serial);
-TinyLink<MyData, TinyArduinoAdapter> link(adapter);
-
 void loop() {
     link.update(); // Keep the engine running
 

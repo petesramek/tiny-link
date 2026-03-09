@@ -1,5 +1,7 @@
-#include <TinyLink.h>
-#include <adapters/TinyArduinoAdapter.h>
+#include "TinyLink.h"
+#include "adapters/TinyArduinoAdapter.h"
+
+using namespace tinylink;
 
 struct Dummy { uint32_t val; };
 TinyArduinoAdapter hw(Serial);

@@ -2,11 +2,13 @@
 #define TINY_LINK_H
 
 #include "TinyProtocol.h"
+#include "version.h"
+
+namespace tinylink {
 
 template <typename T, typename Adapter>
 class TinyLink {
 public:
-    // Callback signature: void function(const T& data)
     typedef void (*ReceiverCallback)(const T& data);
 
 private:
@@ -16,7 +18,7 @@ private:
         (void)a->isOpen(); (void)a->available(); (void)a->read(); (void)a->millis(); a->write((uint8_t)0);
     }
 
-    // --- Fletcher-16 Checksum (Strict 16-bit) ---
+    // --- Fletcher-16 Checksum ---
     inline uint16_t fletcher16(const uint8_t* data, uint8_t len) {
         uint16_t sum1 = 0xff, sum2 = 0xff;
         while (len) {
@@ -66,12 +68,14 @@ private:
     }
 
     Adapter* _hw;
-    T _data;
+    T _data;                         // Live, verified data
     TinyStats _stats = {0, 0, 0};
-    ReceiverCallback _onReceive = nullptr; // Callback pointer
-    
+    ReceiverCallback _onReceive = nullptr;
+
+    // --- Memory Optimized Buffers ---
     static const size_t PLAIN_SIZE = 3 + sizeof(T) + 2; 
-    uint8_t _rawBuf[PLAIN_SIZE + 2]; 
+    uint8_t _pBuf[PLAIN_SIZE];       // "Work Buffer" for decoding/integrity checks
+    uint8_t _rawBuf[PLAIN_SIZE + 2]; // Encoded buffer
     uint8_t _rawIdx = 0;
 
     uint8_t _currType = 0, _currSeq = 0, _nextSeq = 0;
@@ -81,11 +85,11 @@ private:
 
 public:
     TinyLink(Adapter& hw) : _hw(&hw) {
-        static_assert(sizeof(T) <= 240, "TinyLink: Payload exceeds COBS limits.");
+        static_assert(sizeof(T) <= 240, "TinyLink: Payload exceeds 240 bytes (COBS limit).");
         (void)&TinyLink::_static_interface_check;
     }
 
-    // --- Configuration ---
+    // --- Config & Lifecycle ---
     void onReceive(ReceiverCallback cb) { _onReceive = cb; }
     void setTimeout(unsigned long ms) { _timeout = ms; }
     void clearStats() { memset(&_stats, 0, sizeof(TinyStats)); }
@@ -99,6 +103,7 @@ public:
     uint8_t type() { return _currType; }
     uint8_t seq()  { return _currSeq; }
 
+    // --- Core Engine ---
     void update() {
         if (!_hw->isOpen() || _hasNew) return;
 
@@ -113,28 +118,26 @@ public:
             uint8_t c = (uint8_t)incoming;
             _lastByte = _hw->millis();
 
-            if (c == 0x00) { // Frame Delimiter
+            if (c == 0x00) { 
                 if (_rawIdx >= 5) {
-                    uint8_t decoded[PLAIN_SIZE];
-                    size_t dLen = cobs_decode(_rawBuf, _rawIdx, decoded);
+                    // Decode into "Work Buffer" to isolate from live data
+                    size_t dLen = cobs_decode(_rawBuf, _rawIdx, _pBuf);
                     
                     if (dLen == PLAIN_SIZE) {
-                        uint16_t calc = fletcher16(decoded, PLAIN_SIZE - 2);
-                        uint16_t recv = (uint16_t)decoded[PLAIN_SIZE - 2] | ((uint16_t)decoded[PLAIN_SIZE - 1] << 8);
+                        uint16_t calc = fletcher16(_pBuf, PLAIN_SIZE - 2);
+                        uint16_t recv = (uint16_t)_pBuf[PLAIN_SIZE - 2] | ((uint16_t)_pBuf[PLAIN_SIZE - 1] << 8);
                         
                         if (calc == recv) {
-                            _currType = decoded[0];
-                            _currSeq  = decoded[1];
-                            memcpy(&_data, &decoded[3], sizeof(T));
+                            // Only overwrite live data AFTER verification
+                            _currType = _pBuf[0];
+                            _currSeq  = _pBuf[1];
+                            memcpy(&_data, &_pBuf[3], sizeof(T));
                             
                             _hasNew = true;
                             _stats.packets++;
                             _rawIdx = 0;
 
-                            // EXECUTE CALLBACK
-                            if (_onReceive != nullptr) {
-                                _onReceive(_data);
-                            }
+                            if (_onReceive) _onReceive(_data);
                             return; 
                         } else { _stats.crcErrs++; }
                     } else { _stats.crcErrs++; }
@@ -150,23 +153,26 @@ public:
     void send(uint8_t type, const T& payload) {
         if (!_hw->isOpen()) return;
         
-        uint8_t plain[PLAIN_SIZE];
-        plain[0] = type;
-        plain[1] = _nextSeq++;
-        plain[2] = (uint8_t)sizeof(T);
-        memcpy(&plain[3], &payload, sizeof(T));
+        // Prepare plain frame in Work Buffer to save stack RAM
+        _pBuf[0] = type;
+        _pBuf[1] = _nextSeq++;
+        _pBuf[2] = (uint8_t)sizeof(T);
+        memcpy(&_pBuf[3], &payload, sizeof(T));
 
-        uint16_t chk = fletcher16(plain, PLAIN_SIZE - 2);
-        plain[PLAIN_SIZE - 2] = chk & 0xFF;
-        plain[PLAIN_SIZE - 1] = (chk >> 8) & 0xFF;
+        uint16_t chk = fletcher16(_pBuf, PLAIN_SIZE - 2);
+        _pBuf[PLAIN_SIZE - 2] = chk & 0xFF;
+        _pBuf[PLAIN_SIZE - 1] = (chk >> 8) & 0xFF;
 
+        // Encode from Work Buffer into Raw Buffer
         uint8_t encoded[PLAIN_SIZE + 2];
-        size_t eLen = cobs_encode(plain, PLAIN_SIZE, encoded);
+        size_t eLen = cobs_encode(_pBuf, PLAIN_SIZE, encoded);
 
         _hw->write(0x00);
         _hw->write(encoded, eLen);
         _hw->write(0x00);
     }
 };
+
+} // namespace tinylink
 
 #endif

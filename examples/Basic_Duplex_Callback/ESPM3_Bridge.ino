@@ -1,6 +1,8 @@
-#include <TinyLink.h>
-#include <adapters/TinyArduinoAdapter.h>
+#include "TinyLink.h"
+#include "adapters/TinyArduinoAdapter.h"
 #include "SharedData.h"
+
+using namespace tinylink;
 
 // Initialize on Hardware Serial
 TinyArduinoAdapter adapter(Serial);
