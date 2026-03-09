@@ -1,0 +1,41 @@
+name: TinyLink CI
+
+on: [push, pull_request]
+
+jobs:
+  test_native:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Run Native Unit Tests
+        run: pio test -e native
+
+  compile_check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Verify Build (MH-Tiny88 / AVR)
+        run: pio ci --lib="." --board=attiny88 src/TinyLink.h
+
+      - name: Verify Build (ESP-M3 / ESP8266)
+        run: pio ci --lib="." --board=esp01_1m src/TinyLink.h
