@@ -1,6 +1,6 @@
 #include <iostream>
 #include <iomanip>
-#include "../../src/TinyLink.h"
+#include "TinyLink.h"
 
 // 1. Choose the correct adapter for your OS
 #ifdef _WIN32

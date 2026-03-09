@@ -1,5 +1,5 @@
-#include <../../src/TinyLink.h>
-#include <../../src/adapters/TinyArduinoAdapter.h>
+#include <TinyLink.h>
+#include <adapters/TinyArduinoAdapter.h>
 
 struct Dummy { uint32_t val; };
 TinyArduinoAdapter hw(Serial);
