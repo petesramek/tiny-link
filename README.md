@@ -10,9 +10,13 @@
 ## 🌟 Key Features
 
 - **Strict Integrity**: Uses the **Fletcher-16** algorithm—significantly more reliable than simple sum-checks for catching bit-flips and swapped bytes.
+
 - **COBS Framing**: Implements *Consistent Overhead Byte Stuffing*. By using `0x00` as a unique delimiter, the protocol never "desyncs" and is immune to payload data being mistaken for control characters.
+
 - **Event-Driven API**: Support for **Asynchronous Callbacks** via `onReceive()`. Handle data the moment it arrives without cluttering your `loop()`.
+
 - **Zero-Copy & Zero-Heap**: Optimized for 8-bit AVR. No dynamic memory allocation; data is processed directly in static buffers.
+
 - **Multi-Platform**: Native adapters for **Arduino**, **Linux (POSIX)**, **Windows (Win32)**, **ESP-IDF**, and **STM32 HAL**.
 
 ---
@@ -156,6 +160,7 @@ Serial.print("Timeouts: "); Serial.println(stats.timeouts);
 ```
 
 ## 📂 Project Structure
+
 `src/`: Core protocol logic (`TinyLink.h`, `TinyProtocol.h`).
 `src/adapters/`: Hardware-specific drivers (Arduino, Posix, Windows, etc.).
 `examples/`: Ready-to-run duplex, callback, and health-monitoring demos.
