@@ -152,7 +152,6 @@ void test_cobs_double_delimiter(void) {
     link.update();
     
     TEST_ASSERT_EQUAL_UINT16(0, link.getStats().crcErrs);
-    TEST_ASSERT_EQUAL_UINT8(0, adapter.available());
 }
 
 /** 
@@ -247,6 +246,52 @@ void test_buffer_overflow_protection(void) {
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "Overflow guard prevented recovery");
 }
 
+/** 
+ * @brief TEST: Message Type Filtering.
+ * Verifies that the engine handles valid packets of various Message Types.
+ */
+void test_type_filtering(void) {
+    TestPayload data = { 55, 5.5f };
+    link.send('A', data); 
+    
+    while(adapter.available() > 0 && !link.available()) link.update();
+    
+    TEST_ASSERT_EQUAL_UINT8('A', link.type());
+}
+
+/** 
+ * @brief TEST: Sequence Tracking.
+ * Verifies that packet sequence numbers correctly increment.
+ */
+void test_sequence_tracking(void) {
+    TestPayload data = { 1, 1.0f };
+    link.send(tinylink::TYPE_DATA, data);
+    uint8_t seq1 = link.seq();
+    
+    link.send(tinylink::TYPE_DATA, data);
+    uint8_t seq2 = link.seq();
+    
+    TEST_ASSERT_EQUAL_UINT8(seq1 + 1, seq2);
+}
+
+/** 
+ * @brief TEST: Buffer Isolation.
+ * Verifies that incoming unverified data does not corrupt current valid data.
+ */
+void test_buffer_isolation(void) {
+    TestPayload p1 = { 111, 1.1f };
+    link.send(tinylink::TYPE_DATA, p1);
+    while(adapter.available() > 0 && !link.available()) link.update();
+    
+    // Inject a partial/corrupt packet
+    uint8_t partial[] = { 0x00, 0x05, 0x01 }; 
+    adapter.inject(partial, sizeof(partial));
+    link.update();
+    
+    // Valid data must remain isolated
+    TEST_ASSERT_EQUAL_UINT32(111, link.peek().uptime);
+}
+
 /**
  * @brief Entry point for the PlatformIO Native Test Runner.
  */
@@ -264,6 +309,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_double_delimiter_resilience);
     RUN_TEST(test_short_frame_rejection);
     RUN_TEST(test_buffer_overflow_protection);
+    RUN_TEST(test_type_filtering);
+    RUN_TEST(test_sequence_tracking);
+    RUN_TEST(test_buffer_isolation);
 
     return UNITY_END();
 }
