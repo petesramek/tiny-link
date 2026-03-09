@@ -16,7 +16,7 @@
 struct TestPayload {
     uint32_t uptime;
     float value;
-};
+} __attribute__((packed));
 
 /** @brief Global flag for callback verification */
 bool g_callbackTriggered = false;

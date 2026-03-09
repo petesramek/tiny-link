@@ -109,6 +109,7 @@ public:
      */
     TinyLink(Adapter& hw) : _hw(&hw) {
         static_assert(sizeof(T) <= 240, "TinyLink: Payload exceeds 240 bytes (COBS limit).");
+        static_assert(alignof(T) == 1, "TinyLink: Data type must be packed (alignof == 1). Use  __attribute__((packed)) on data type.");
         (void)&TinyLink::_static_interface_check;
     }
 
