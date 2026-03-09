@@ -1,41 +1,62 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
+# --- Compiled Binaries & Objects ---
 *.o
 *.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
 *.a
 *.lib
-
-# Executables
 *.exe
 *.out
 *.app
+*.elf
+*.hex
+*.bin
 
-# debug information files
+# --- Visual Studio Code ---
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# --- Visual Studio ---
+.vs/
+Debug/
+Release/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.sln.docstates
+
+# --- CLion / JetBrains ---
+.idea/
+cmake-build-*/
+*.iws
+
+# --- Arduino / PlatformIO (If used for testing) ---
+.pio/
+.clangd/
+remote_pins.txt
+.fpio-checksum
+
+# --- macOS / Linux System Files ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumb.db
+*~
+*.swp
+*.swo
+
+# --- Prerequisites & Debug ---
+*.d
+*.gch
+*.pch
+*.ilk
+*.pdb
 *.dwo
