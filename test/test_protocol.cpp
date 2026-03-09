@@ -10,7 +10,7 @@ struct TestPayload {
 };
 
 // Use the namespace for the base class
-class LoopbackAdapter : public TinyTestAdapter {
+class LoopbackAdapter : public tinylink::TinyTestAdapter {
 public:
     // Base class methods must be virtual in TinyTestAdapter.h for this to work
     void write(uint8_t c) override { inject(&c, 1); }
