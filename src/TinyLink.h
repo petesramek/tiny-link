@@ -2,27 +2,32 @@
 #define TINY_LINK_H
 
 #include "TinyProtocol.h"
+#include <type_traits>
 
 template <typename T, typename Adapter>
 class TinyLink {
 private:
+    // --- Compile-Time Driver Validation ---
     void _static_interface_check() {
         Adapter* a = nullptr;
         (void)a->isOpen();
         (void)a->available();
         (void)a->read();
         (void)a->millis();
-        a->write((uint8_t)0);
+        a->write((uint8_t)0);  
     }
 
     Adapter* _hw;
     T _data;
     TinyStats _stats = {0, 0, 0};
+    
     TinyState _state = TinyState::WAIT_SOH;
     TinyStatus _status = TinyStatus::STATUS_OK;
+    
     uint8_t _hBuf[3]; 
     uint8_t _pBuf[sizeof(T)];
     uint8_t _pIdx = 0, _expectedLen = 0, _currType = 0, _currSeq = 0, _nextSeq = 0;
+    
     bool _hasNew = false;
     unsigned long _lastByte = 0;
     unsigned long _timeout = 250;
@@ -39,20 +44,39 @@ private:
         if (s == TinyStatus::ERR_CRC)     _stats.crcErrs++;
         _status = s;
         _state = TinyState::WAIT_SOH;
+        _pIdx = 0;
     }
 
 public:
-    TinyLink(Adapter& hw) : _hw(&hw) { (void)&TinyLink::_static_interface_check; }
+    TinyLink(Adapter& hw) : _hw(&hw) { 
+        static_assert(sizeof(T) <= 255, "Payload exceeds 255 byte limit.");
+        (void)&TinyLink::_static_interface_check; 
+    }
     
+    // --- Hardware & Status ---
     bool connected() { return _hw->isOpen(); }
     const TinyStats& getStats() { return _stats; }
+    void clearStats() { memset(&_stats, 0, sizeof(TinyStats)); }
+    TinyStatus getStatus() { return _status; }
+    TinyState getState() { return _state; }
+    void setTimeout(unsigned long ms) { _timeout = ms; }
+
+    // --- Data Access ---
     bool available() { return _hasNew; }
     const T& peek() { return _data; }
     void flush() { _hasNew = false; }
+    
+    uint8_t type() { return _currType; }
+    uint8_t seq()  { return _currSeq; }
 
+    // --- Core Engine ---
     void update() {
         if (!_hw->isOpen()) return;
 
+        // Flow Control: Don't fetch new bytes if a packet is waiting for flush()
+        if (_hasNew) return;
+
+        // Timeout Logic
         if (_state != TinyState::WAIT_SOH && (_hw->millis() - _lastByte > _timeout)) {
             reset(TinyStatus::ERR_TIMEOUT, CAN);
             return;
@@ -64,26 +88,26 @@ public:
             uint8_t c = (uint8_t)incoming;
             _lastByte = _hw->millis();
 
-            switch (_state) { 
-            case TinyState::WAIT_SOH: 
-                if (c == SOH) { 
-                    _status = TinyStatus::STATUS_OK; 
-                    _state = TinyState::IN_TYPE; 
-                } 
-                break;
+            switch (_state) {
+                case TinyState::WAIT_SOH: 
+                    if (c == SOH) {
+                        _status = TinyStatus::STATUS_OK;
+                        _state = TinyState::IN_TYPE;
+                    } 
+                    break;
                 case TinyState::IN_TYPE:
-                    _currType = _hBuf[0] = c; 
-                    _state = TinyState::WAIT_SEQ; 
+                    _currType = _hBuf[0] = c;
+                    _state = TinyState::WAIT_SEQ;
                     break;
                 case TinyState::WAIT_SEQ:
-                    _currSeq = _hBuf[1] = c; 
-                    _state = TinyState::WAIT_LEN; 
+                    _currSeq = _hBuf[1] = c;
+                    _state = TinyState::WAIT_LEN;
                     break;
                 case TinyState::WAIT_LEN: 
                     _expectedLen = _hBuf[2] = c; 
                     if (_expectedLen > sizeof(T)) {
-                        reset(TinyStatus::ERR_CRC, NAK); 
-                        break; 
+                        reset(TinyStatus::ERR_CRC, NAK);
+                        return;
                     }
                     _state = TinyState::WAIT_H_CHK; 
                     break;
@@ -110,11 +134,16 @@ public:
                     if (c == checksum(_pBuf, _expectedLen)) {
                         _state = TinyState::WAIT_ACK;
                     } else {
-                        reset(TinyStatus::ERR_CRC, NAK); 
-                    }
+                        reset(TinyStatus::ERR_CRC, NAK);
+                    } 
                     break;
                 case TinyState::WAIT_ACK: 
-                    if (c == ACK) { memcpy(&_data, _pBuf, sizeof(T)); _hasNew = true; _stats.packets++; }
+                    if (c == ACK) { 
+                        memcpy(&_data, _pBuf, sizeof(T)); 
+                        _hasNew = true; 
+                        _stats.packets++; 
+                        return;
+                    }
                     _state = TinyState::WAIT_SOH;
                     break;
             }
@@ -127,9 +156,14 @@ public:
         const uint8_t* pRaw = (const uint8_t*)&payload;
         uint8_t hData[3] = { type, _nextSeq++, len };
         
-        _hw->write(SOH); _hw->write(hData, 3); _hw->write(checksum(hData, 3));
-        _hw->write(STX); _hw->write(pRaw, len); _hw->write(ETX);
-        _hw->write(checksum(pRaw, len)); _hw->write(ACK);
+        _hw->write(SOH);
+        _hw->write(hData, 3);
+        _hw->write(checksum(hData, 3));
+        _hw->write(STX);
+        _hw->write(pRaw, len);
+        _hw->write(ETX);
+        _hw->write(checksum(pRaw, len));
+        _hw->write(ACK);
     }
 
     TinyStatus getStatus() {
