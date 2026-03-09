@@ -1,6 +1,6 @@
 # TinyLink 🚀
 
-[![License: MIT](https://img.shields.io)](https://opensource.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Framework: Arduino](https://img.shields.io)](https://www.arduino.cc)
 [![TinyLink CI](https://github.com/petesramek/tiny-link/actions/workflows/cpp-ci.yml/badge.svg)](https://github.com/petesramek/tiny-link/actions/workflows/cpp-ci.yml)
 
