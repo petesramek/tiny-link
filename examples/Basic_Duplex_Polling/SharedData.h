@@ -7,6 +7,7 @@ struct MyData {
     uint32_t uptime;
     float temperature;
     uint8_t commandId;
-};
+} __attribute__((packed)); // Forces both CPUs to use the same memory layout
+
 
 #endif
