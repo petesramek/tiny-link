@@ -40,7 +40,7 @@ jobs:
           #include <TinyLink.h>
           #include <adapters/TinyArduinoAdapter.h>
           using namespace tinylink;
-          struct Data { int x; };
+          struct Data { int x; } __attribute__((packed));
           TinyArduinoAdapter hw(Serial);
           TinyLink<Data, TinyArduinoAdapter> link(hw);
           void setup(){} 
@@ -54,7 +54,7 @@ jobs:
           #include <TinyLink.h>
           #include <adapters/TinyArduinoAdapter.h>
           using namespace tinylink;
-          struct Data { int x; };
+          struct Data { int x; } __attribute__((packed));
           TinyArduinoAdapter hw(Serial);
           TinyLink<Data, TinyArduinoAdapter> link(hw);
           void setup(){} 
