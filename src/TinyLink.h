@@ -74,9 +74,15 @@ private:
         size_t read_idx = 0, write_idx = 0;
         while (read_idx < len) {
             uint8_t code = src[read_idx++];
-            if (read_idx + code - 1 > len) return 0; 
-            for (uint8_t i = 1; i < code; i++) dst[write_idx++] = src[read_idx++];
-            if (code < 0xFF && read_idx < len) dst[write_idx++] = 0;
+            // Safety: If code is 0 (invalid) or points past the buffer, stop.
+            if (code == 0 || (read_idx + code - 1) > len) return 0; 
+            
+            for (uint8_t i = 1; i < code; i++) {
+                dst[write_idx++] = src[read_idx++];
+            }
+            if (code < 0xFF && read_idx < len) {
+                dst[write_idx++] = 0;
+            }
         }
         return write_idx;
     }
