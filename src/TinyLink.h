@@ -142,7 +142,8 @@ public:
                         memcpy(&_data, _pBuf, sizeof(T)); 
                         _hasNew = true; 
                         _stats.packets++; 
-                        return;
+                        _state = TinyState::WAIT_SOH;
+                        return; 
                     }
                     _state = TinyState::WAIT_SOH;
                     break;

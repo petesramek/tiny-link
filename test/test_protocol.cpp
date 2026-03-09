@@ -122,18 +122,24 @@ void test_multi_packet_burst(void) {
     TestPayload p1 = {1, 1.1f};
     TestPayload p2 = {2, 2.2f};
     
+    // 1. Inject both packets
     link.send(TYPE_DATA, p1);
     link.send(TYPE_DATA, p2);
     
-    // First update should find the first packet
-    link.update();
-    TEST_ASSERT_TRUE(link.available());
+    // 2. Process Packet 1
+    while(!link.available()) {
+        link.update();
+    }
     TEST_ASSERT_EQUAL_UINT32(1, link.peek().uptime);
-    link.flush();
+    link.flush(); // Clear _hasNew so update() can run again
     
-    // Second update (continuing the while loop) should find the second packet
-    link.update();
-    TEST_ASSERT_TRUE(link.available());
+    // 3. Process Packet 2
+    // We must call update() in a loop to parse all bytes of the 2nd packet
+    while(!link.available() && adapter.available() > 0) {
+        link.update();
+    }
+    
+    TEST_ASSERT_TRUE_MESSAGE(link.available(), "Packet 2 should be available after second update loop");
     TEST_ASSERT_EQUAL_UINT32(2, link.peek().uptime);
 }
 
