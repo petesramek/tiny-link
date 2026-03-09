@@ -198,8 +198,10 @@ public:
     void send(uint8_t type, const T& payload) {
         if (!_hw->isOpen()) return;
         
+        _currSeq = _nextSeq++; 
+
         _pBuf[0] = type;
-        _pBuf[1] = _nextSeq++;
+        _pBuf[1] = _currSeq;
         _pBuf[2] = (uint8_t)sizeof(T);
         memcpy(&_pBuf[3], &payload, sizeof(T));
 
