@@ -1,7 +1,6 @@
 # TinyLink 🚀
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Framework: Arduino](https://img.shields.io)](https://www.arduino.cc)
 [![TinyLink CI](https://github.com/petesramek/tiny-link/actions/workflows/cpp-ci.yml/badge.svg)](https://github.com/petesramek/tiny-link/actions/workflows/cpp-ci.yml)
 
 **TinyLink** is a high-efficiency, template-based serial protocol for reliable, bidirectional UART communication. Optimized for memory-constrained devices like the **MH-Tiny88** (512B RAM) and **ESP-M3**, it provides a "pro-level" transport layer with zero-heap overhead.
