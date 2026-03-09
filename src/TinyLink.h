@@ -207,12 +207,14 @@ public:
         _pBuf[PLAIN_SIZE - 2] = chk & 0xFF;
         _pBuf[PLAIN_SIZE - 1] = (chk >> 8) & 0xFF;
 
-        uint8_t encoded[PLAIN_SIZE + 2];
-        size_t eLen = cobs_encode(_pBuf, PLAIN_SIZE, encoded);
+        // Reuse _rawBuf to save stack RAM
+        size_t eLen = cobs_encode(_pBuf, PLAIN_SIZE, _rawBuf);
 
         _hw->write(0x00);
-        _hw->write(encoded, eLen);
+        _hw->write(_rawBuf, eLen);
         _hw->write(0x00);
+        
+        _rawIdx = 0; // Ensure receiver state is clean
     }
 };
 
