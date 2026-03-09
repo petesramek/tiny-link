@@ -15,6 +15,10 @@ struct TestPayload {
     float value;
 };
 
+/** @brief Global flag for callback verification */
+bool g_callbackTriggered = false;
+void testCallback(const TestPayload& data) { g_callbackTriggered = true; }
+
 /** 
  * @class LoopbackAdapter
  * @brief Simulates a physical wire by piping TX directly into the RX buffer.
@@ -32,7 +36,10 @@ tinylink::TinyLink<TestPayload, LoopbackAdapter> link(adapter);
 void setUp(void) {
     link.flush();
     link.clearStats();
+    link.onReceive(nullptr);
     adapter.setMillis(0);
+    adapter.getRawBuffer().clear();
+    g_callbackTriggered = false;
 }
 
 /** @test Verifies end-to-end success: Send -> COBS Encode -> Decode -> Verify Fletcher-16 */
@@ -40,7 +47,6 @@ void test_cobs_loopback(void) {
     TestPayload data = { 98765, 3.1415f };
     link.send(tinylink::TYPE_DATA, data);
 
-    // Process the bytes until the link reports a new packet available
     while(adapter.available() > 0 && !link.available()) {
         link.update();
     }
@@ -50,11 +56,22 @@ void test_cobs_loopback(void) {
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, data.value, link.peek().value);
 }
 
+/** @test Verifies COBS transparency by sending a payload consisting entirely of 0x00 bytes */
+void test_cobs_zero_payload(void) {
+    TestPayload zeros = { 0, 0.0f }; 
+    link.send(tinylink::TYPE_DATA, zeros);
+    
+    while(adapter.available() > 0 && !link.available()) {
+        link.update();
+    }
+    TEST_ASSERT_TRUE_MESSAGE(link.available(), "COBS failed to handle all-zero payload");
+}
+
 /** @test Verifies that the 0x00 delimiter allows recovery from partial/junk data */
 void test_cobs_resync(void) {
-    uint8_t junk[] = { 0xFF, 0xAA, 0x12, 0x45 }; // No 0x00 in this junk
+    uint8_t junk[] = { 0xFF, 0xAA, 0x12, 0x45 }; 
     adapter.inject(junk, sizeof(junk));
-    link.update(); // Should attempt to parse but find no delimiter
+    link.update(); 
 
     TestPayload data = { 1, 1.0f };
     link.send(tinylink::TYPE_DATA, data);
@@ -71,10 +88,9 @@ void test_cobs_crc_failure(void) {
     TestPayload data = { 10, 2.0f };
     link.send(tinylink::TYPE_DATA, data);
 
-    // Manipulate the raw stream: Corrupt the Fletcher-16 high-byte
     std::vector<uint8_t>& buf = adapter.getRawBuffer();
     if (buf.size() > 3) {
-        buf[buf.size() - 2] ^= 0xFF; 
+        buf[buf.size() - 2] ^= 0xFF; // Flip bits in Fletcher-16
     }
 
     while(adapter.available() > 0) {
@@ -85,11 +101,26 @@ void test_cobs_crc_failure(void) {
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
 
+/** @test Verifies that the onReceive callback fires correctly upon valid packet arrival */
+void test_async_callback(void) {
+    link.onReceive(testCallback);
+    TestPayload data = { 1, 1.0f };
+    link.send(tinylink::TYPE_DATA, data);
+
+    while(adapter.available() > 0) {
+        link.update();
+    }
+
+    TEST_ASSERT_TRUE_MESSAGE(g_callbackTriggered, "Callback was not triggered");
+}
+
 /** @brief Entry point for PlatformIO Native Test Runner */
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_cobs_loopback);
+    RUN_TEST(test_cobs_zero_payload);
     RUN_TEST(test_cobs_resync);
     RUN_TEST(test_cobs_crc_failure);
+    RUN_TEST(test_async_callback);
     return UNITY_END();
 }
