@@ -11,12 +11,16 @@ const uint8_t TYPE_DATA = 'D', TYPE_DEBUG = 'g', TYPE_REQ = 'R', TYPE_DONE = 'K'
 enum class TinyStatus { STATUS_OK = 0, ERR_TIMEOUT, ERR_CRC };
 
 enum class TinyState { 
-    WAIT_SOH, IN_TYPE, WAIT_SEQ, WAIT_LEN, WAIT_H_CHK, 
-    WAIT_STX, IN_PAYLOAD, WAIT_ETX, WAIT_P_CHK, WAIT_ACK 
+    WAIT_SOH, IN_TYPE, WAIT_SEQ, WAIT_LEN, 
+    WAIT_H_CHK_L, WAIT_H_CHK_H, // 2-byte Header Checksum
+    WAIT_STX, IN_PAYLOAD, WAIT_ETX, 
+    WAIT_P_CHK_L, WAIT_P_CHK_H, // 2-byte Payload Checksum
+    WAIT_ACK 
 };
 
+
 struct TinyStats {
-    uint16_t packets;  
+    uint32_t packets;
     uint16_t crcErrs;  
     uint16_t timeouts; 
 };

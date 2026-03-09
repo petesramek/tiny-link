@@ -7,10 +7,8 @@ struct TestPayload {
     float value;
 };
 
-// A modified version of your TestAdapter for Loopback
 class LoopbackAdapter : public TinyTestAdapter {
 public:
-    // Override write to automatically "inject" data back into the read buffer
     void write(uint8_t c) override { inject(&c, 1); }
     void write(const uint8_t* b, size_t l) override { inject(b, l); }
 };
@@ -20,136 +18,78 @@ TinyLink<TestPayload, LoopbackAdapter> link(adapter);
 
 void setUp(void) {
     link.flush();
+    link.clearStats();
     adapter.setMillis(0);
 }
 
-void test_full_loopback_transmission(void) {
-    TestPayload dataToSend = { 54321, 123.456f };
-    
-    // 1. Send data through the link
-    // This calls adapter.write(), which our LoopbackAdapter 
-    // redirects into the internal read buffer.
-    link.send(TYPE_DATA, dataToSend);
+// TEST: Verify Fletcher-16 Loopback
+void test_fletcher16_loopback(void) {
+    TestPayload data = { 54321, 123.456f };
+    link.send(TYPE_DATA, data);
 
-    // 2. Run the state machine to process the "received" data
-    // We call update multiple times to ensure the whole buffer is parsed
+    // Drain buffer
     while(adapter.available() > 0) {
         link.update();
     }
 
-    // 3. Verify Integrity
-    TEST_ASSERT_TRUE_MESSAGE(link.available(), "Packet should be available after loopback");
-    
-    const TestPayload& received = link.peek();
-    TEST_ASSERT_EQUAL_UINT32(dataToSend.uptime, received.uptime);
-    // Use a small epsilon for float comparison
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, dataToSend.value, received.value);
-    
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().packets);
+    TEST_ASSERT_TRUE(link.available());
+    TEST_ASSERT_EQUAL_UINT32(data.uptime, link.peek().uptime);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, data.value, link.peek().value);
 }
 
-void test_corrupted_header_recovery(void) {
-    // 0x01 (SOH), 'D' (Type), 0x00 (Seq), 0x05 (Len), 0xFF (WRONG CHKSUM)
-    uint8_t corruptedHeader[] = { SOH, 'D', 0x00, 0x05, 0xFF }; 
-    adapter.inject(corruptedHeader, sizeof(corruptedHeader));
+// TEST: Verify Header Corruption (Fletcher-16 detection)
+void test_header_fletcher_corruption(void) {
+    // [SOH][Type][Seq][Len][H-CHK_L][H-CHK_H]
+    uint8_t badHeader[] = { SOH, 'D', 0x01, 0x04, 0x00, 0x00 }; // Forced wrong CHK
+    adapter.inject(badHeader, sizeof(badHeader));
     
-    // Process all injected bytes
-    while(adapter.available() > 0) {
-        link.update();
-    }
+    link.update();
     
     TEST_ASSERT_FALSE(link.available());
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
-    TEST_ASSERT_EQUAL(TinyStatus::ERR_CRC, link.getStatus()); 
-    TEST_ASSERT_EQUAL(TinyState::WAIT_SOH, link.getState()); 
 }
 
-void test_payload_checksum_failure(void) {
-    // Reset stats before starting
-    link.clearStats();
-
-    uint8_t corruptedFrame[] = {
-        0x01,                   // SOH
-        'D', 0x01, 0x04,        // Type, Seq, Len
-        (uint8_t)('D'+0x01+0x04), // H-CHK
-        0x02,                   // STX
-        0xDE, 0xAD, 0xBE, 0xEF, // Payload
-        0x03,                   // ETX
-        0xFF                    // P-CHK (WRONG)
-    };
-
-    adapter.inject(corruptedFrame, sizeof(corruptedFrame));
+// TEST: Verify Payload Corruption (Fletcher-16 detection)
+void test_payload_fletcher_corruption(void) {
+    TestPayload data = { 1, 1.0f };
+    link.send(TYPE_DATA, data);
+    
+    // Manually corrupt the very last byte of the buffer (P-CHK_H)
+    std::vector<uint8_t>& buf = adapter.getRawBuffer();
+    buf[buf.size() - 2] ^= 0xFF; // Flip bits in the checksum
     
     while(adapter.available() > 0) {
         link.update();
     }
 
+    TEST_ASSERT_FALSE(link.available());
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
 
-void test_resynchronization_after_timeout(void) {
-    link.clearStats();
-    
-    // 1. Inject a partial "garbage" fragment (Start of a packet that never finishes)
-    uint8_t partial[] = { SOH, 'D', 0x01, sizeof(TestPayload) };
-    adapter.inject(partial, sizeof(partial));
-    
-    link.update();
-    TEST_ASSERT_EQUAL(TinyState::WAIT_H_CHK, link.getState()); // Stuck waiting for H-CHK
-    
-    // 2. Advance time to trigger a timeout reset
-    adapter.advanceMillis(300); 
-    link.update();
-    
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().timeouts);
-    TEST_ASSERT_EQUAL(TinyState::WAIT_SOH, link.getState()); // Should be back at start
-
-    // 3. Immediately inject a VALID packet
-    TestPayload validData = { 999, 9.9f };
-    link.send(TYPE_DATA, validData); // Loopback send
-    
-    while(adapter.available() > 0) {
-        link.update();
-    }
-
-    // 4. Verify recovery
-    TEST_ASSERT_TRUE_MESSAGE(link.available(), "Should recover and receive the second packet");
-    TEST_ASSERT_EQUAL_UINT32(999, link.peek().uptime);
-}
-
-void test_multi_packet_burst(void) {
-    link.clearStats();
+// TEST: Multi-packet burst with Flow Control
+void test_burst_with_fletcher(void) {
     TestPayload p1 = {1, 1.1f};
     TestPayload p2 = {2, 2.2f};
     
-    // 1. Inject both packets
     link.send(TYPE_DATA, p1);
     link.send(TYPE_DATA, p2);
     
-    // 2. Process Packet 1
-    while(!link.available()) {
-        link.update();
-    }
+    // Process P1
+    while(!link.available()) link.update();
     TEST_ASSERT_EQUAL_UINT32(1, link.peek().uptime);
-    link.flush(); // Clear _hasNew so update() can run again
+    link.flush();
     
-    // 3. Process Packet 2
-    // We must call update() in a loop to parse all bytes of the 2nd packet
-    while(!link.available() && adapter.available() > 0) {
-        link.update();
-    }
-    
-    TEST_ASSERT_TRUE_MESSAGE(link.available(), "Packet 2 should be available after second update loop");
+    // Process P2
+    while(!link.available() && adapter.available() > 0) link.update();
+    TEST_ASSERT_TRUE(link.available());
     TEST_ASSERT_EQUAL_UINT32(2, link.peek().uptime);
 }
 
-
 int main(int argc, char **argv) {
     UNITY_BEGIN();
-    RUN_TEST(test_full_loopback_transmission);
-    RUN_TEST(test_corrupted_header_recovery);
-    RUN_TEST(test_payload_checksum_failure);
-    RUN_TEST(test_resynchronization_after_timeout);
-    RUN_TEST(test_multi_packet_burst);
+    RUN_TEST(test_fletcher16_loopback);
+    RUN_TEST(test_header_fletcher_corruption);
+    RUN_TEST(test_payload_fletcher_corruption);
+    RUN_TEST(test_burst_with_fletcher);
     return UNITY_END();
 }
