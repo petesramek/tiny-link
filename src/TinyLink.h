@@ -2,19 +2,17 @@
 #define TINY_LINK_H
 
 #include "TinyProtocol.h"
-#include <type_traits>
 
 template <typename T, typename Adapter>
 class TinyLink {
 private:
-    // --- Compile-Time Driver Validation ---
     void _static_interface_check() {
-        Adapter* a = nullptr;
+        Adapter* a = (Adapter*)0;
         (void)a->isOpen();
         (void)a->available();
         (void)a->read();
         (void)a->millis();
-        a->write((uint8_t)0);  
+        a->write((uint8_t)0);
     }
 
     Adapter* _hw;

@@ -36,7 +36,7 @@ jobs:
 
       - name: Verify Build (MH-Tiny88 / AVR)
         run: |
-          echo '#include <TinyLink.h>\n#include <adapters/TinyArduinoAdapter.h>\nstruct Data { int x; };\nTinyArduinoAdapter hw(Serial);\nTinyLink<Data, TinyArduinoAdapter> link(hw);\nvoid setup(){} void loop(){ link.update(); }' > verify.cpp
+          printf "#include <TinyLink.h>\n#include <adapters/TinyArduinoAdapter.h>\nstruct Data { int x; };\nTinyArduinoAdapter hw(Serial);\nTinyLink<Data, TinyArduinoAdapter> link(hw);\nvoid setup(){} void loop(){ link.update(); }" > verify.cpp
           pio ci --lib="." --board=attiny88 verify.cpp
 
       - name: Verify Build (ESP-M3 / ESP8266)
