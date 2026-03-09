@@ -128,14 +128,14 @@ void loop() {
 
 ## 📊 Choosing Your Pattern
 
-| Feature | Polling Style (available/peek) | Callback Style (onReceive)
+| Feature | Polling Style (available/peek) | Callback Style (onReceive) |
 | --- |  --- |  --- | 
-| Logic Flow | Linear / Sequential | Event-Driven / Asynchronous
-| Best For | Simple sketches, step-by-step debugging. | Complex projects, multi-tasking, clean loop().
-| Control | User decides when to process data. | Data is processed the moment it arrives.
-| Code Style | Traditional Arduino if checks. | Modern C++ "Listener" pattern.
-| Manual Cleanup | Requires link.flush() after reading. | Automatic; no flush() or available() needed.
-| RAM Usage | Identical (Zero-copy const T&). | Identical (2-byte Function Pointer).
+| Logic Flow | Linear / Sequential | Event-Driven / Asynchronous |
+| Best For | Simple sketches, step-by-step debugging. | Complex projects, multi-tasking, clean loop(). |
+| Control | User decides when to process data. | Data is processed the moment it arrives. |
+| Code Style | Traditional Arduino if checks. | Modern C++ "Listener" pattern. |
+| Manual Cleanup | Requires link.flush() after reading. | Automatic; no flush() or available() needed. |
+| RAM Usage | Identical (Zero-copy const T&). | Identical (2-byte Function Pointer). |
 
 **Which one should I use?**
 
