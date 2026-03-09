@@ -58,7 +58,7 @@ TinyArduinoAdapter adapter(Serial);
 TinyLink<MyData, TinyArduinoAdapter> link(adapter);
 ```
 
-** For Professional C++ / Large Projects **
+**For Professional C++ / Large Projects**
 
 It is recommended to use the explicit namespace prefix to ensure absolute symbol safety.
 
