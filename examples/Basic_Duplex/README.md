@@ -18,9 +18,9 @@ GND	──────────────	GND (Common)
 
 ## 📂 Example Structure
 
-SharedData.h: Defines the struct MyData used by both devices. *Must be identical on both sides*.
-Tiny88_Sensor.ino: Collects "simulated" sensor data and sends it every 2 seconds. Uses a *callback* to handle incoming commands from the ESP.
-ESPM3_Bridge.ino: Receives sensor data and immediately sends a command response back to the Tiny88.
+*SharedData.h*: Defines the struct MyData used by both devices. *Must be identical on both sides*.
+*Tiny88_Sensor.ino*: Collects "simulated" sensor data and sends it every 2 seconds. Uses a *callback* to handle incoming commands from the ESP.
+*ESPM3_Bridge.ino*: Receives sensor data and immediately sends a command response back to the Tiny88.
 
 ## 🚀 How to Run
 
