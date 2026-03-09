@@ -1,0 +1,41 @@
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+TinyLink	KEYWORD1
+TinyStats	KEYWORD1
+TinyStatus	KEYWORD1
+TinyState	KEYWORD1
+TinyArduinoAdapter	KEYWORD1
+TinyPosixAdapter	KEYWORD1
+TinyWindowsAdapter	KEYWORD1
+TinyESPIDFAdapter	KEYWORD1
+TinySTM32HALAdapter	KEYWORD1
+TinyTestAdapter	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+update	KEYWORD2
+send	KEYWORD2
+onReceive	KEYWORD2
+available	KEYWORD2
+peek	KEYWORD2
+flush	KEYWORD2
+connected	KEYWORD2
+getStats	KEYWORD2
+clearStats	KEYWORD2
+getStatus	KEYWORD2
+getState	KEYWORD2
+setTimeout	KEYWORD2
+isOpen	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+TYPE_DATA	LITERAL1
+TYPE_DEBUG	LITERAL1
+TYPE_REQ	LITERAL1
+TYPE_DONE	LITERAL1
+STATUS_OK	LITERAL1
+ERR_TIMEOUT	LITERAL1
+ERR_CRC	LITERAL1
