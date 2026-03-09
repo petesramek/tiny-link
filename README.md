@@ -129,6 +129,7 @@ void loop() {
 ## 📊 Choosing Your Pattern
 
 | Feature | Polling Style (available/peek) | Callback Style (onReceive)
+| --- |  --- |  --- | 
 | Logic Flow | Linear / Sequential | Event-Driven / Asynchronous
 | Best For | Simple sketches, step-by-step debugging. | Complex projects, multi-tasking, clean loop().
 | Control | User decides when to process data. | Data is processed the moment it arrives.
