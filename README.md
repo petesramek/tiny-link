@@ -162,8 +162,11 @@ Serial.print("Timeouts: "); Serial.println(stats.timeouts);
 ## 📂 Project Structure
 
 `src/`: Core protocol logic (`TinyLink.h`, `TinyProtocol.h`).
+
 `src/adapters/`: Hardware-specific drivers (Arduino, Posix, Windows, etc.).
+
 `examples/`: Ready-to-run duplex, callback, and health-monitoring demos.
+
 `test/`: Native C++ unit tests using `TinyTestAdapter`.
 
 ## 📜 License
