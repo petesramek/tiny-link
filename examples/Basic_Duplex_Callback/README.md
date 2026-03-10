@@ -13,11 +13,11 @@ This example demonstrates a **full-duplex, bidirectional** link between an **MH-
 The MH-Tiny88 (**5V**) and ESP-M3 (**3.3V**) require a voltage divider on the Tiny88's TX line to protect the ESP.
 
 | **MH-Tiny88 (5V)** | **Connection**           | **ESP-M3 (3.3V)**
-| ---              | ---                    | ---
-| TX (D1)          |	───[ 1kΩ ]──┬──	    | RX
-|                  | └─[ 2kΩ ]─┤            | GND
-| RX (D0)          | ──────────────         | TX
-| GND              | ──────────────         | GND (Common)
+| ---              | ---                        | ---
+| TX (D1)          | ───[ 1kΩ ]─────┬────────── | RX
+|                  |                └─[ 2kΩ ]─┤ | GND
+| RX (D0)          | ────────────────────────── | TX
+| GND              | ────────────────────────── | GND (Common)
 
 ## 📂 Code Overview
 
