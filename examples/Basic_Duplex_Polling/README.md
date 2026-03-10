@@ -15,7 +15,7 @@ The MH-Tiny88 (**5V**) and ESP-M3 (**3.3V**) require a voltage divider on the Ti
 | **MH-Tiny88 (5V)** | **Connection**           | **ESP-M3 (3.3V)**
 | ---              | ---                        | ---
 | TX (D1)          | ───[ 1kΩ ]─────┬────────── | RX
-|                  |                └─[ 2kΩ ]─┤ | GND
+|                  |                 └─[ 2kΩ ]─┤ | GND
 | RX (D0)          | ────────────────────────── | TX
 | GND              | ────────────────────────── | GND (Common)
 
