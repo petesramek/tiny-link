@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use TinyLink in your research or project, please cite it as below."
+type: software
+title: TinyLink
+abstract: >
+  TinyLink is a lightweight, template-based serial protocol for reliable,
+  bidirectional UART communication. Optimized for memory-constrained
+  microcontrollers, it provides zero-heap, zero-copy packet framing with
+  Fletcher-16 checksums and COBS encoding.
+authors:
+  - family-names: Sramek
+    given-names: Pete
+    alias: petesramek
+repository-code: https://github.com/petesramek/tiny-link
+url: https://github.com/petesramek/tiny-link
+license: MIT
+version: 0.4.0
+date-released: "2026-01-01"
+keywords:
+  - serial
+  - UART
+  - protocol
+  - embedded
+  - microcontroller
+  - Arduino
+  - COBS
+  - Fletcher-16
+  - C++
