@@ -135,7 +135,11 @@ void test_cobs_zero_payload(void) {
 void test_cobs_resync(void) {
     uint8_t junk[] = { 0xFF, 0xAA, 0x12, 0x45 }; 
     adapter.inject(junk, sizeof(junk));
-    link.update(); 
+
+    uint8_t zero = 0x00;
+    adapter.inject(&zero, 1);
+
+    link.update();
 
     TestPayload data = { 1, 1.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
