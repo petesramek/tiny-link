@@ -198,9 +198,6 @@ namespace tinylink {
 		unsigned long _handshakeTimer = 0;
 		uint8_t       _lastSentSeq = 0;
 
-		// RX resync flag (NEW)
-		bool _inResync = false;
-
 		// -------------------------------------------------------------------------
 		// Internal: send a fixed-size protocol frame (ACK or STATUS)
 		// -------------------------------------------------------------------------

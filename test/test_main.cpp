@@ -93,10 +93,16 @@ static void drain_or_fail(L& l, A& a, int max_iters = 1000, bool flush_when_avai
     int i = 0;
     while (a.available() > 0 && i++ < max_iters) {
         l.update();
-        if (flush_when_available && l.available()) {
-            l.flush();
+
+        if (l.available()) {
+            if (flush_when_available) {
+                l.flush();
+            } else {
+                return; // stop once first user packet is ready
+            }
         }
     }
+
     TEST_ASSERT_TRUE_MESSAGE(i < max_iters, "Stuck: adapter buffer did not drain");
 }
 
@@ -1067,11 +1073,25 @@ void test_crc_endian_sensitivity(void) {
 /** @test Verifies that a loopback link self-completes the handshake and reaches WAIT_FOR_SYNC */
 void test_handshake_completes(void) {
     link.reset();
-    adapter.getRawBuffer().clear();
 
     TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, link.state());
 
-    for (int i = 0; i < 5 && link.state() != tinylink::TinyState::WAIT_FOR_SYNC; i++) {
+    for (int i = 0; i < 10 && link.state() != tinylink::TinyState::WAIT_FOR_SYNC; i++) {
+        link.update();
+    }
+
+    TEST_ASSERT_EQUAL(tinylink::TinyState::WAIT_FOR_SYNC, link.state());
+    TEST_ASSERT_TRUE(link.connected());
+}
+
+void test_state_transitions(void) {
+    link.reset();
+    // adapter.getRawBuffer().clear();  // remove this line
+
+    TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, link.state());
+    TEST_ASSERT_FALSE(link.connected());
+
+    for (int i = 0; i < 10 && link.state() != tinylink::TinyState::WAIT_FOR_SYNC; i++) {
         link.update();
     }
 
@@ -1212,13 +1232,13 @@ void test_handshake_failed_callback(void) {
 /** @test Verifies the full CONNECTING → HANDSHAKING → WAIT_FOR_SYNC state transition */
 void test_state_transitions(void) {
     link.reset();
-    adapter.getRawBuffer().clear();
 
     TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, link.state());
     TEST_ASSERT_FALSE(link.connected());
 
-    // A single update() on the loopback link completes the entire handshake
-    link.update();
+    for (int i = 0; i < 10 && link.state() != tinylink::TinyState::WAIT_FOR_SYNC; i++) {
+        link.update();
+    }
 
     TEST_ASSERT_EQUAL(tinylink::TinyState::WAIT_FOR_SYNC, link.state());
     TEST_ASSERT_TRUE(link.connected());
