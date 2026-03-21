@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file TinyLink.h
  * @brief Main template engine for the TinyLink protocol.
  */
@@ -146,7 +146,6 @@ namespace tinylink {
             return write_idx;
         }
 
-
         // -------------------------------------------------------------------------
         // Member Variables
         // -------------------------------------------------------------------------
@@ -164,41 +163,43 @@ namespace tinylink {
         typedef void (*HandshakeFailedCallback)();
         typedef void (*StatusReceivedCallback)(const TinyStatusPayload& status);
 
-        AckReceivedCallback     _onAckReceived     = nullptr;
-        AckFailedCallback       _onAckFailed        = nullptr;
-        HandshakeFailedCallback _onHandshakeFailed  = nullptr;
-        StatusReceivedCallback  _onStatusReceived   = nullptr;
+        AckReceivedCallback     _onAckReceived = nullptr;
+        AckFailedCallback       _onAckFailed = nullptr;
+        HandshakeFailedCallback _onHandshakeFailed = nullptr;
+        StatusReceivedCallback  _onStatusReceived = nullptr;
 
-        static const size_t PLAIN_SIZE      = 3 + sizeof(T) + 2;
+        static const size_t PLAIN_SIZE = 3 + sizeof(T) + 2;
         static const size_t PROTO_FRAME_MAX = 3 + sizeof(TinyStatusPayload) + 2; // 9 bytes
         static const size_t DECODE_BUF_SIZE = PLAIN_SIZE > PROTO_FRAME_MAX ? PLAIN_SIZE : PROTO_FRAME_MAX;
 
         uint8_t _pBuf[DECODE_BUF_SIZE];
         uint8_t _rawBuf[PLAIN_SIZE + 64];
 
-        uint8_t _rawIdx   = 0;
+        uint8_t _rawIdx = 0;
         uint8_t _currType = 0;
-        uint8_t _currSeq  = 0;
-        uint8_t _nextSeq  = 0;
+        uint8_t _currSeq = 0;
+        uint8_t _nextSeq = 0;
 
         bool _hasNew = false;
 
         unsigned long _lastByte = 0;
-        unsigned long _timeout  = 250;
+        unsigned long _timeout = 250;
 
         // State machine
         TinyState _state = TinyState::CONNECTING;
 
         // Handshake configuration and state
-        unsigned long _ackTimeout          = 500;
-        unsigned long _handshakeTimeout    = 5000;
+        unsigned long _ackTimeout = 500;
+        unsigned long _handshakeTimeout = 5000;
         uint8_t       _maxHandshakeRetries = 2;
         uint8_t       _handshakeRetryCount = 0;
-        uint8_t       _statusFlags         = 0x00;
-        unsigned long _ackTimer            = 0;
-        unsigned long _handshakeTimer      = 0;
-        uint8_t       _lastSentSeq         = 0;
+        uint8_t       _statusFlags = 0x00;
+        unsigned long _ackTimer = 0;
+        unsigned long _handshakeTimer = 0;
+        uint8_t       _lastSentSeq = 0;
 
+        // RX resync flag (NEW)
+        bool _inResync = false;
 
         // -------------------------------------------------------------------------
         // Internal: send a fixed-size protocol frame (ACK or STATUS)
@@ -228,18 +229,18 @@ namespace tinylink {
         // -------------------------------------------------------------------------
         void _sendStatus() {
             TinyStatusPayload sp;
-            sp.state   = static_cast<uint8_t>(_state);
+            sp.state = static_cast<uint8_t>(_state);
             sp.lastSeq = _currSeq;
             sp.lastErr = TinyResult::OK;
-            sp.flags   = _statusFlags;
+            sp.flags = _statusFlags;
 
-            uint8_t seq   = _nextSeq++;
-            _lastSentSeq  = seq;
-            _handshakeTimer = _hw->millis() | 1UL; // ensure non-zero
+            uint8_t seq = _nextSeq++;
+            _lastSentSeq = seq;
+            _handshakeTimer = _hw->millis() | 1UL;
 
             _sendInternal(TYPE_STATUS, seq,
-                          reinterpret_cast<const uint8_t*>(&sp),
-                          static_cast<uint8_t>(sizeof(sp)));
+                reinterpret_cast<const uint8_t*>(&sp),
+                static_cast<uint8_t>(sizeof(sp)));
         }
 
         // -------------------------------------------------------------------------
@@ -247,12 +248,12 @@ namespace tinylink {
         // -------------------------------------------------------------------------
         void _sendAck(uint8_t ackedSeq, TinyResult result) {
             TinyAck ack;
-            ack.seq    = ackedSeq;
+            ack.seq = ackedSeq;
             ack.result = result;
 
             _sendInternal(TYPE_ACK, _nextSeq++,
-                          reinterpret_cast<const uint8_t*>(&ack),
-                          static_cast<uint8_t>(sizeof(ack)));
+                reinterpret_cast<const uint8_t*>(&ack),
+                static_cast<uint8_t>(sizeof(ack)));
         }
 
         // -------------------------------------------------------------------------
@@ -267,7 +268,8 @@ namespace tinylink {
                 if (_state == TinyState::CONNECTING) {
                     _sendAck(msgSeq, TinyResult::OK);
                     _state = TinyState::HANDSHAKING;
-                } else if (_state == TinyState::HANDSHAKING) {
+                }
+                else if (_state == TinyState::HANDSHAKING) {
                     // Duplicate STATUS — re-ACK it
                     _sendAck(msgSeq, TinyResult::OK);
                 }
@@ -275,31 +277,32 @@ namespace tinylink {
                 if (_onStatusReceived) _onStatusReceived(sp);
                 return false;
 
-            } else if (msgType == TYPE_ACK) {
+            }
+            else if (msgType == TYPE_ACK) {
                 TinyAck ack;
                 memcpy(&ack, &_pBuf[3], sizeof(TinyAck));
 
                 if (_state == TinyState::AWAITING_ACK && ack.seq == _lastSentSeq) {
                     if (_onAckReceived) _onAckReceived(ack.seq);
-                    _state   = TinyState::WAIT_FOR_SYNC;
-                    _rawIdx  = 0;
-                } else if (_state == TinyState::HANDSHAKING && ack.seq == _lastSentSeq) {
+                    _state = TinyState::WAIT_FOR_SYNC;
+                    _rawIdx = 0;
+                }
+                else if (_state == TinyState::HANDSHAKING && ack.seq == _lastSentSeq) {
                     // ACK for our STATUS → handshake complete
-                    _state  = TinyState::WAIT_FOR_SYNC;
+                    _state = TinyState::WAIT_FOR_SYNC;
                     _rawIdx = 0;
                 }
                 return false;
 
-            } else {
-                // User-visible data: TYPE_DATA, TYPE_COMMAND, TYPE_DEBUG, or any custom type
+            }
+            else {
                 _currType = msgType;
-                _currSeq  = msgSeq;
+                _currSeq = msgSeq;
                 memcpy(&_data, &_pBuf[3], sizeof(T));
 
                 _hasNew = true;
                 _stats.packets++;
 
-                // Send ACK for DATA and COMMAND types
                 if (msgType == TYPE_DATA || msgType == TYPE_COMMAND) {
                     _sendAck(msgSeq, TinyResult::OK);
                 }
@@ -311,49 +314,40 @@ namespace tinylink {
 
     public:
 
-        // -------------------------------------------------------------------------
-        // Constructor
-        // -------------------------------------------------------------------------
         TinyLink(Adapter& hw) : _hw(&hw) {
             static_assert(sizeof(T) <= 64, "TinyLink: Payload exceeds 64 bytes. TinyLink is designed for micro-messages.");
             static_assert(alignof(T) == 1, "TinyLink: Data type must be packed. Use __attribute__((packed)).");
         }
 
-        void onReceive(ReceiverCallback cb)                    { _onReceive = cb; }
-        void onAckReceived(AckReceivedCallback cb)             { _onAckReceived = cb; }
-        void onAckFailed(AckFailedCallback cb)                 { _onAckFailed = cb; }
-        void onHandshakeFailed(HandshakeFailedCallback cb)     { _onHandshakeFailed = cb; }
-        void onStatusReceived(StatusReceivedCallback cb)       { _onStatusReceived = cb; }
+        void onReceive(ReceiverCallback cb) { _onReceive = cb; }
+        void onAckReceived(AckReceivedCallback cb) { _onAckReceived = cb; }
+        void onAckFailed(AckFailedCallback cb) { _onAckFailed = cb; }
+        void onHandshakeFailed(HandshakeFailedCallback cb) { _onHandshakeFailed = cb; }
+        void onStatusReceived(StatusReceivedCallback cb) { _onStatusReceived = cb; }
 
-        void setTimeout(unsigned long ms)          { _timeout = ms; }
-        void setAckTimeout(unsigned long ms)       { _ackTimeout = ms; }
+        void setTimeout(unsigned long ms) { _timeout = ms; }
+        void setAckTimeout(unsigned long ms) { _ackTimeout = ms; }
         void setHandshakeTimeout(unsigned long ms) { _handshakeTimeout = ms; }
-        void setMaxHandshakeRetries(uint8_t n)     { _maxHandshakeRetries = n; }
-        void setStatusFlags(uint8_t flags)         { _statusFlags = flags; }
+        void setMaxHandshakeRetries(uint8_t n) { _maxHandshakeRetries = n; }
+        void setStatusFlags(uint8_t flags) { _statusFlags = flags; }
 
         void clearStats() { memset(&_stats, 0, sizeof(TinyStats)); }
 
-        /** @brief Returns true once the handshake has completed. */
         bool connected() {
             return _state != TinyState::CONNECTING && _state != TinyState::HANDSHAKING;
         }
 
         const TinyStats& getStats() { return _stats; }
 
-        /** @brief Expose current protocol state. */
         TinyState state() { return _state; }
 
-        /**
-         * @brief Reset to CONNECTING state (re-runs the handshake).
-         * Call before re-using a link object (e.g. between unit tests).
-         */
         void reset() {
-            _state               = TinyState::CONNECTING;
-            _rawIdx              = 0;
-            _handshakeTimer      = 0;
+            _state = TinyState::CONNECTING;
+            _rawIdx = 0;
+            _handshakeTimer = 0;
             _handshakeRetryCount = 0;
-            _ackTimer            = 0;
-            _hasNew              = false;
+            _ackTimer = 0;
+            _hasNew = false;
         }
 
         bool available() { return _hasNew; }
@@ -364,7 +358,6 @@ namespace tinylink {
         uint8_t seq() { return _currSeq; }
 
         uint16_t overflowErrors() const { return _overflowErrs; }
-
 
         // -------------------------------------------------------------------------
         // Update: Main RX State Machine
@@ -377,11 +370,13 @@ namespace tinylink {
             if (_state == TinyState::CONNECTING) {
                 if (_handshakeTimer == 0) {
                     _sendStatus();
-                } else if (_hw->millis() - _handshakeTimer > _handshakeTimeout) {
+                }
+                else if (_hw->millis() - _handshakeTimer > _handshakeTimeout) {
                     if (_handshakeRetryCount < _maxHandshakeRetries) {
                         _handshakeRetryCount++;
                         _sendStatus();
-                    } else {
+                    }
+                    else {
                         if (_onHandshakeFailed) _onHandshakeFailed();
                         _handshakeRetryCount = 0;
                         _handshakeTimer = _hw->millis() | 1UL;
@@ -393,25 +388,33 @@ namespace tinylink {
             if (_state == TinyState::AWAITING_ACK && _rawIdx == 0) {
                 if (_hw->millis() - _ackTimer > _ackTimeout) {
                     if (_onAckFailed) _onAckFailed(_lastSentSeq, TinyResult::ERR_TIMEOUT);
-                    _state  = TinyState::WAIT_FOR_SYNC;
+                    _state = TinyState::WAIT_FOR_SYNC;
                     _rawIdx = 0;
                 }
             }
 
             // ---- IN_FRAME inter-byte timeout ----
             if (_state == TinyState::IN_FRAME && (_hw->millis() - _lastByte > _timeout)) {
-                _state  = TinyState::WAIT_FOR_SYNC;
+                _state = TinyState::WAIT_FOR_SYNC;
                 _rawIdx = 0;
                 _stats.timeouts++;
             }
 
             while (_hw->available() > 0) {
-
                 int incoming = _hw->read();
                 if (incoming < 0) break;
 
                 uint8_t c = (uint8_t)incoming;
                 _lastByte = _hw->millis();
+
+                // --- RX resync: discard everything until we see a delimiter
+                if (_inResync) {
+                    if (c == 0x00) {
+                        _inResync = false;
+                        _rawIdx = 0;
+                    }
+                    continue;
+                }
 
                 // -------------------------------------------------------------
                 // Frame delimiter detected (COBS frame boundary)
@@ -426,15 +429,17 @@ namespace tinylink {
 
                         if (dLen >= 3) {
                             uint8_t msgType = _pBuf[0];
-                            uint8_t msgSeq  = _pBuf[1];
+                            uint8_t msgSeq = _pBuf[1];
 
                             // Expected decoded frame size depends on message type
                             size_t expLen;
                             if (msgType == TYPE_ACK) {
                                 expLen = 3 + sizeof(TinyAck) + 2;
-                            } else if (msgType == TYPE_STATUS) {
+                            }
+                            else if (msgType == TYPE_STATUS) {
                                 expLen = 3 + sizeof(TinyStatusPayload) + 2;
-                            } else {
+                            }
+                            else {
                                 expLen = PLAIN_SIZE;
                             }
 
@@ -446,24 +451,27 @@ namespace tinylink {
 
                                 if (calc == recv) {
                                     if (_processFrame(msgType, msgSeq)) {
-                                        return; // User data ready — caller must flush()
+                                        return;
                                     }
-                                    // Protocol frame handled — keep reading
-                                } else {
-                                    _stats.crcErrs++;
                                 }
-                            } else {
+                                else {
+                                    _stats.crcErrs++;
+                                    _inResync = true;
+                                }
+                            }
+                            else {
                                 _stats.crcErrs++;
+                                _inResync = true;
                             }
                         }
-                    } else {
+                    }
+                    else {
                         _rawIdx = 0;
                         if (_state == TinyState::IN_FRAME) {
                             _state = TinyState::WAIT_FOR_SYNC;
                         }
                     }
                 }
-
                 // -------------------------------------------------------------
                 // Accumulate bytes
                 // -------------------------------------------------------------
@@ -473,17 +481,18 @@ namespace tinylink {
                         if (_state == TinyState::WAIT_FOR_SYNC) {
                             _state = TinyState::IN_FRAME;
                         }
-                    } else {
+                    }
+                    else {
                         _overflowErrs++;
                         _rawIdx = 0;
                         if (_state == TinyState::IN_FRAME) {
                             _state = TinyState::WAIT_FOR_SYNC;
                         }
+                        _inResync = true;
                     }
                 }
             }
         }
-
 
         // -------------------------------------------------------------------------
         // TX: Encode + Send Frame
@@ -518,8 +527,8 @@ namespace tinylink {
             // Enter AWAITING_ACK for reliable message types
             if (type == TYPE_DATA || type == TYPE_COMMAND) {
                 _lastSentSeq = _currSeq;
-                _ackTimer    = _hw->millis();
-                _state       = TinyState::AWAITING_ACK;
+                _ackTimer = _hw->millis();
+                _state = TinyState::AWAITING_ACK;
             }
         }
     };
