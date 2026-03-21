@@ -21,14 +21,22 @@ namespace tinylink {
      * Using enum class ensures type safety while allowing easy casting.
      */
     enum class MessageType : uint8_t {
-        Data = 'D',   /**< Standard data payload */
-        Debug = 'g',   /**< Debugging / Logging information */
-        Req = 'R',   /**< Request for data / action */
-        Done = 'K'    /**< Acknowledgment of completion */
+        Data    = 'D',  /**< Standard data payload */
+        Command = 'C',  /**< Instruction to the other end (replaces Req) */
+        Ack     = 'A',  /**< Combined ACK/NACK — carries a TinyResult code */
+        Debug   = 'g',  /**< Diagnostics / crash report forwarding */
+        Status  = 'S',  /**< Boot-time state exchange / handshake */
     };
 
+    /** @brief Convenience aliases for the MessageType enum values. */
+    constexpr uint8_t TYPE_DATA    = static_cast<uint8_t>(MessageType::Data);
+    constexpr uint8_t TYPE_COMMAND = static_cast<uint8_t>(MessageType::Command);
+    constexpr uint8_t TYPE_ACK     = static_cast<uint8_t>(MessageType::Ack);
+    constexpr uint8_t TYPE_DEBUG   = static_cast<uint8_t>(MessageType::Debug);
+    constexpr uint8_t TYPE_STATUS  = static_cast<uint8_t>(MessageType::Status);
+
     // ------------------------------------------------------------
-    // High-Level Status Codes
+    // High-Level Status Codes (legacy — use TinyResult for new code)
     // ------------------------------------------------------------
 
     /**
@@ -41,15 +49,58 @@ namespace tinylink {
     };
 
     // ------------------------------------------------------------
-    // COBS Decode State Machine
+    // Granular Result Codes
     // ------------------------------------------------------------
 
     /**
-     * @brief Internal state stages for COBS frame processing.
+     * @brief Granular result codes carried in TinyAck.result.
+     */
+    enum class TinyResult : uint8_t {
+        OK             = 0x00,  /**< Processed successfully */
+        ERR_CRC        = 0x01,  /**< Checksum or framing failure */
+        ERR_TIMEOUT    = 0x02,  /**< Inter-byte timeout */
+        ERR_OVERFLOW   = 0x03,  /**< Buffer overflow */
+        ERR_BUSY       = 0x04,  /**< Engine not ready (_hasNew not cleared) */
+        ERR_PROCESSING = 0x05,  /**< Received OK but application-level failure */
+        ERR_UNKNOWN    = 0xFF,  /**< Catch-all */
+    };
+
+    // ------------------------------------------------------------
+    // Protocol Payload Structs
+    // ------------------------------------------------------------
+
+    /**
+     * @brief Payload for TYPE_ACK messages.
+     */
+    struct TinyAck {
+        uint8_t    seq;     /**< Sequence number being acknowledged */
+        TinyResult result;  /**< Granular result code */
+    } __attribute__((packed)); // 2 bytes
+
+    /**
+     * @brief Payload for TYPE_STATUS messages (handshake + state exchange).
+     */
+    struct TinyStatusPayload {
+        uint8_t    state;    /**< Current TinyState of the sender */
+        uint8_t    lastSeq;  /**< Last sequence number successfully processed */
+        TinyResult lastErr;  /**< Last error code (0x00 = OK) */
+        uint8_t    flags;    /**< User-defined bitmask: bit0=WiFi, bit1=MQTT, etc. */
+    } __attribute__((packed)); // 4 bytes
+
+    // ------------------------------------------------------------
+    // Protocol State Machine
+    // ------------------------------------------------------------
+
+    /**
+     * @brief Full state machine for the TinyLink connection and RX pipeline.
      */
     enum class TinyState : uint8_t {
-        WAIT_FOR_SYNC,   /**< Waiting for 0x00 frame delimiter */
-        IN_FRAME         /**< Accumulating encoded bytes until next 0x00 */
+        CONNECTING,     /**< Boot state — sends TYPE_STATUS, waits for other end's STATUS */
+        HANDSHAKING,    /**< STATUS received and ACK sent, waiting for ACK to our STATUS */
+        WAIT_FOR_SYNC,  /**< Connected — normal operation, waiting for 0x00 frame delimiter */
+        IN_FRAME,       /**< Accumulating encoded bytes until next 0x00 */
+        FRAME_COMPLETE, /**< Valid frame received, ready to process */
+        AWAITING_ACK,   /**< Sent a packet, waiting for Ack response */
     };
 
     // ------------------------------------------------------------

@@ -1,9 +1,9 @@
 /**
  * @file test_protocol.cpp
- * @brief Unit tests for TinyLink v0.4.0 (COBS + Fletcher-16)
+ * @brief Unit tests for TinyLink v0.5.0 (COBS + Fletcher-16 + connection handshake)
  * 
- * Verifies data integrity, framing robustness, and hardware-level 
- * fault tolerance (noise, timeouts, and overflows).
+ * Verifies data integrity, framing robustness, hardware-level fault tolerance
+ * (noise, timeouts, overflows), and the full connection handshake protocol.
  */
 
 #include <unity.h>
@@ -37,17 +37,57 @@ public:
     void write(const uint8_t* b, size_t l) override { inject(b, l); }
 };
 
+/**
+ * @class TxCaptureAdapter
+ * @brief Captures TX bytes without looping back, for handshake testing.
+ */
+class TxCaptureAdapter : public tinylink::TinyTestAdapter {
+public:
+    std::vector<uint8_t> txBuffer;
+    void write(uint8_t c) override { txBuffer.push_back(c); }
+    void write(const uint8_t* b, size_t l) override {
+        txBuffer.insert(txBuffer.end(), b, b + l);
+    }
+    void clearTx() { txBuffer.clear(); }
+};
+
 LoopbackAdapter adapter;
 tinylink::TinyLink<TestPayload, LoopbackAdapter> link(adapter);
+
+/**
+ * @brief Complete a connection handshake on a TinyLink instance via loopback.
+ *
+ * Resets the link to CONNECTING state, runs update() until the loopback
+ * self-completes the STATUS exchange, then clears any leftover bytes.
+ */
+template<typename T, typename A>
+void completeHandshake(tinylink::TinyLink<T, A>& l, A& a) {
+    l.reset();
+    for (int i = 0; i < 5 && l.state() != tinylink::TinyState::WAIT_FOR_SYNC; i++) {
+        l.update();
+    }
+    a.getRawBuffer().clear();
+}
 
 /** @brief Reset the state machine and virtual clock before every test case */
 void setUp(void) {
     link.flush();
     link.clearStats();
     link.onReceive(nullptr);
+    link.onAckReceived(nullptr);
+    link.onAckFailed(nullptr);
+    link.onHandshakeFailed(nullptr);
+    link.onStatusReceived(nullptr);
     adapter.setMillis(0);
     adapter.getRawBuffer().clear();
     g_callbackTriggered = false;
+
+    // Reset and complete handshake via loopback so tests start in WAIT_FOR_SYNC
+    link.reset();
+    for (int i = 0; i < 5 && link.state() != tinylink::TinyState::WAIT_FOR_SYNC; i++) {
+        link.update();
+    }
+    adapter.getRawBuffer().clear(); // Clear any leftover handshake bytes
 }
 
 /** @brief Reset state after every test case */
@@ -253,11 +293,11 @@ void test_buffer_overflow_protection(void) {
  */
 void test_type_filtering(void) {
     TestPayload data = { 55, 5.5f };
-    link.send('A', data); 
+    link.send('Q', data); 
     
     while(adapter.available() > 0 && !link.available()) link.update();
     
-    TEST_ASSERT_EQUAL_UINT8('A', link.type());
+    TEST_ASSERT_EQUAL_UINT8('Q', link.type());
 }
 
 /** 
@@ -432,6 +472,7 @@ struct TinyStruct {
 void test_minimum_payload(void) {
     // Create a specific link for the 1-byte struct
     tinylink::TinyLink<TinyStruct, LoopbackAdapter> tinyLink(adapter);
+    completeHandshake(tinyLink, adapter);
     TinyStruct s = { 0xFE };
     
     tinyLink.send(tinylink::TYPE_DATA, s);
@@ -449,6 +490,7 @@ struct OtherStruct { uint64_t raw; } __attribute__((packed));
 /** @test Verifies that valid packets with matching sizes but different purposes are distinguished by 'type()' */
 void test_type_validation(void) {
     tinylink::TinyLink<OtherStruct, LoopbackAdapter> otherLink(adapter);
+    completeHandshake(otherLink, adapter);
     OtherStruct data = { 0xDEADBEEF };
     
     otherLink.send('X', data); // Type 'X'
@@ -512,9 +554,10 @@ struct Large { uint32_t a; uint32_t b; } __attribute__((packed));
 void test_crosstalk_rejection(void) {
     tinylink::TinyLink<Small, LoopbackAdapter> linkSmall(adapter);
     tinylink::TinyLink<Large, LoopbackAdapter> linkLarge(adapter);
+    completeHandshake(linkSmall, adapter);
     
     Small s = { 0xFF };
-    linkSmall.send('S', s);
+    linkSmall.send('T', s);  // Use 'T' to avoid TYPE_STATUS ('S') confusion
     
     // Update the LARGE link with SMALL data
     while(adapter.available() > 0) linkLarge.update();
@@ -528,6 +571,7 @@ struct MaxBlock { uint8_t raw[235]; } __attribute__((packed)); // 235 + 5 = 240 
 /** @test Verifies COBS behavior at the 254-byte block boundary */
 void test_cobs_max_block_boundary(void) {
     tinylink::TinyLink<MaxBlock, LoopbackAdapter> maxLink(adapter);
+    completeHandshake(maxLink, adapter);
     MaxBlock data; 
     memset(data.raw, 0xFF, 235); // Fill with non-zero data
     
@@ -558,6 +602,7 @@ void test_single_bit_flip_detection(void) {
 void test_trailing_zero_payload(void) {
     struct TailZero { uint16_t val; uint8_t zero; } __attribute__((packed));
     tinylink::TinyLink<TailZero, LoopbackAdapter> tailLink(adapter);
+    completeHandshake(tailLink, adapter);
     
     TailZero data = { 0xABCD, 0x00 };
     tailLink.send(tinylink::TYPE_DATA, data);
@@ -639,6 +684,7 @@ void test_protocol_mtu_limit(void) {
 void test_structural_size_mismatch(void) {
     struct NewData { uint32_t a; uint32_t b; uint32_t c; } __attribute__((packed));
     tinylink::TinyLink<NewData, LoopbackAdapter> espLink(adapter);
+    completeHandshake(espLink, adapter);
     
     NewData d = {1, 2, 3};
     espLink.send(tinylink::TYPE_DATA, d); // Sends 17 bytes (3+12+2)
@@ -704,6 +750,7 @@ void test_buffer_headroom_boundary(void) {
     // TestPayload PLAIN_SIZE is 13. Max allowed dLen is 13 + 64 = 77.
     struct Giant { uint8_t raw[70]; } __attribute__((packed)); 
     tinylink::TinyLink<Giant, LoopbackAdapter> giantLink(adapter);
+    completeHandshake(giantLink, adapter);
     
     Giant g; memset(g.raw, 0xFF, 70);
     giantLink.send('G', g); // Sends ~75 bytes
@@ -764,9 +811,10 @@ void test_endless_delimiter_resilience(void) {
 void test_fletcher_contrast_integrity(void) {
     struct Contrast { uint8_t a; uint8_t b; } __attribute__((packed));
     tinylink::TinyLink<Contrast, LoopbackAdapter> cLink(adapter);
+    completeHandshake(cLink, adapter);
     Contrast c = { 0x00, 0xFF };
     
-    cLink.send('C', c);
+    cLink.send('W', c);  // Use 'W' to avoid TYPE_COMMAND ('C') conflict
     while(adapter.available() > 0) cLink.update();
     TEST_ASSERT_TRUE(cLink.available());
 }
@@ -876,9 +924,10 @@ void test_mid_payload_delimiter_reset(void) {
 void test_zero_sum_integrity(void) {
     struct AllOnes { uint32_t a; uint32_t b; } __attribute__((packed));
     tinylink::TinyLink<AllOnes, LoopbackAdapter> aLink(adapter);
+    completeHandshake(aLink, adapter);
     AllOnes data = { 0x00, 0x00 }; // Often results in specific sum patterns
     
-    aLink.send('D', data);
+    aLink.send(tinylink::TYPE_DATA, data);
     while(adapter.available() > 0) aLink.update();
     TEST_ASSERT_TRUE(aLink.available());
 }
@@ -900,6 +949,7 @@ void test_trailing_bit_integrity(void) {
 void test_fletcher_modulo_boundary(void) {
     struct ModData { uint8_t a; uint8_t b; } __attribute__((packed));
     tinylink::TinyLink<ModData, LoopbackAdapter> mLink(adapter);
+    completeHandshake(mLink, adapter);
     
     // 0xFF (255) is the modulo identity for Fletcher. 
     // Testing if 0x00 and 0xFF are treated correctly in the accumulator.
@@ -944,6 +994,7 @@ struct MaxJump { uint8_t data[230]; } __attribute__((packed)); // Stay under 240
 /** @test Verifies COBS decoding at the maximum possible block jump distance */
 void test_cobs_max_jump_safety(void) {
     tinylink::TinyLink<MaxJump, LoopbackAdapter> jLink(adapter);
+    completeHandshake(jLink, adapter);
     MaxJump j; memset(j.data, 0x01, 230);
     
     jLink.send('J', j);
@@ -974,6 +1025,7 @@ void test_unflushed_data_protection(void) {
 /** @test Verifies that the template handles the smallest possible primitive type */
 void test_primitive_type_support(void) {
     tinylink::TinyLink<uint8_t, LoopbackAdapter> pLink(adapter);
+    completeHandshake(pLink, adapter);
     uint8_t val = 0xAB;
     pLink.send('P', val);
     while(adapter.available() > 0) pLink.update();
@@ -1009,10 +1061,216 @@ void test_crc_endian_sensitivity(void) {
 }
 
 
+// =============================================================================
+// v0.5.0 Protocol Tests: Connection Handshake, ACK, and State Machine
+// =============================================================================
+
+/** @test Verifies that a loopback link self-completes the handshake and reaches WAIT_FOR_SYNC */
+void test_handshake_completes(void) {
+    link.reset();
+    adapter.getRawBuffer().clear();
+
+    TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, link.state());
+
+    for (int i = 0; i < 5 && link.state() != tinylink::TinyState::WAIT_FOR_SYNC; i++) {
+        link.update();
+    }
+
+    TEST_ASSERT_EQUAL(tinylink::TinyState::WAIT_FOR_SYNC, link.state());
+    TEST_ASSERT_TRUE(link.connected());
+}
+
+/** @test Verifies that send() is blocked and nothing is transmitted while in CONNECTING */
+void test_send_blocked_during_connecting(void) {
+    link.reset();
+    adapter.getRawBuffer().clear();
+
+    TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, link.state());
+
+    TestPayload data = { 1, 1.0f };
+    link.send(tinylink::TYPE_DATA, data);
+
+    // send() should have returned early — state and buffer unchanged
+    TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, link.state());
+    // Buffer only contains the STATUS bytes written by reset/first-update,
+    // but since we haven't called update() yet, it should be empty.
+    TEST_ASSERT_EQUAL(0, adapter.available());
+}
+
+/** @test Verifies that send() is blocked while in HANDSHAKING */
+void test_send_blocked_during_handshaking(void) {
+    // Capture the STATUS bytes that a fresh link would send
+    TxCaptureAdapter captureAdapter;
+    tinylink::TinyLink<TestPayload, TxCaptureAdapter> captureLink(captureAdapter);
+    captureLink.update(); // Sends STATUS to captureAdapter.txBuffer
+
+    // Create a sink-only link and drive it to HANDSHAKING state
+    tinylink::TinyTestAdapter sinkAdapter;
+    tinylink::TinyLink<TestPayload, tinylink::TinyTestAdapter> handshakeLink(sinkAdapter);
+    handshakeLink.update(); // Sends our STATUS to sink (discarded)
+
+    // Inject the captured STATUS so handshakeLink sees the "remote" STATUS
+    sinkAdapter.inject(captureAdapter.txBuffer.data(), captureAdapter.txBuffer.size());
+    handshakeLink.update(); // Receives STATUS → HANDSHAKING, sends ACK (to sink)
+
+    TEST_ASSERT_EQUAL(tinylink::TinyState::HANDSHAKING, handshakeLink.state());
+
+    // send() during HANDSHAKING must be silently blocked
+    TestPayload data = { 1, 1.0f };
+    handshakeLink.send(tinylink::TYPE_DATA, data);
+    TEST_ASSERT_EQUAL(tinylink::TinyState::HANDSHAKING, handshakeLink.state());
+}
+
+/** @test Verifies onAckReceived fires and state returns to WAIT_FOR_SYNC after data is sent */
+void test_ack_received_on_data(void) {
+    static bool g_ackFired;
+    static uint8_t g_ackedSeq;
+    g_ackFired = false;
+    g_ackedSeq = 0xFF;
+
+    link.onAckReceived([](uint8_t seq) {
+        g_ackFired  = true;
+        g_ackedSeq  = seq;
+    });
+
+    TestPayload data = { 1, 1.0f };
+    link.send(tinylink::TYPE_DATA, data);
+    uint8_t sentSeq = link.seq();
+
+    // Drain fully: DATA comes back, ACK is sent for it, ACK for our send is received
+    while (adapter.available() > 0) {
+        link.update();
+        if (link.available()) link.flush();
+    }
+
+    TEST_ASSERT_TRUE(g_ackFired);
+    TEST_ASSERT_EQUAL_UINT8(sentSeq, g_ackedSeq);
+    TEST_ASSERT_EQUAL(tinylink::TinyState::WAIT_FOR_SYNC, link.state());
+}
+
+/** @test Verifies onAckFailed fires with ERR_TIMEOUT when no ACK arrives within the window */
+void test_ack_failed_on_timeout(void) {
+    static bool g_failFired;
+    static tinylink::TinyResult g_failReason;
+    g_failFired  = false;
+    g_failReason = tinylink::TinyResult::OK;
+
+    link.onAckFailed([](uint8_t, tinylink::TinyResult r) {
+        g_failFired  = true;
+        g_failReason = r;
+    });
+    link.setAckTimeout(100); // 100 ms
+
+    TestPayload data = { 1, 1.0f };
+    link.send(tinylink::TYPE_DATA, data);
+    adapter.getRawBuffer().clear(); // Remove looped-back bytes so no ACK is generated
+
+    adapter.advanceMillis(200); // Past ackTimeout
+    link.update();
+
+    TEST_ASSERT_TRUE(g_failFired);
+    TEST_ASSERT_EQUAL(tinylink::TinyResult::ERR_TIMEOUT, g_failReason);
+    TEST_ASSERT_EQUAL(tinylink::TinyState::WAIT_FOR_SYNC, link.state());
+}
+
+/** @test Verifies retries happen (state stays CONNECTING) up to _maxHandshakeRetries */
+void test_handshake_retry(void) {
+    tinylink::TinyTestAdapter sinkAdapter;
+    tinylink::TinyLink<TestPayload, tinylink::TinyTestAdapter> retryLink(sinkAdapter);
+    retryLink.setHandshakeTimeout(100);
+    retryLink.setMaxHandshakeRetries(2);
+
+    retryLink.update(); // Initial STATUS (time=0), timer set
+    TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, retryLink.state());
+
+    sinkAdapter.advanceMillis(110); // Past 100 ms
+    retryLink.update(); // Retry 1
+    TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, retryLink.state());
+
+    sinkAdapter.advanceMillis(110);
+    retryLink.update(); // Retry 2 — still under max
+    TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, retryLink.state());
+}
+
+/** @test Verifies onHandshakeFailed fires after max retries are exhausted */
+void test_handshake_failed_callback(void) {
+    static bool g_handshakeFailed;
+    g_handshakeFailed = false;
+
+    tinylink::TinyTestAdapter sinkAdapter;
+    tinylink::TinyLink<TestPayload, tinylink::TinyTestAdapter> failLink(sinkAdapter);
+    failLink.setHandshakeTimeout(100);
+    failLink.setMaxHandshakeRetries(2);
+    failLink.onHandshakeFailed([]() { g_handshakeFailed = true; });
+
+    failLink.update();             // Initial STATUS
+    sinkAdapter.advanceMillis(110);
+    failLink.update();             // Retry 1
+    sinkAdapter.advanceMillis(110);
+    failLink.update();             // Retry 2
+    sinkAdapter.advanceMillis(110);
+    failLink.update();             // Max retries exceeded → callback
+
+    TEST_ASSERT_TRUE(g_handshakeFailed);
+}
+
+/** @test Verifies the full CONNECTING → HANDSHAKING → WAIT_FOR_SYNC state transition */
+void test_state_transitions(void) {
+    link.reset();
+    adapter.getRawBuffer().clear();
+
+    TEST_ASSERT_EQUAL(tinylink::TinyState::CONNECTING, link.state());
+    TEST_ASSERT_FALSE(link.connected());
+
+    // A single update() on the loopback link completes the entire handshake
+    link.update();
+
+    TEST_ASSERT_EQUAL(tinylink::TinyState::WAIT_FOR_SYNC, link.state());
+    TEST_ASSERT_TRUE(link.connected());
+}
+
+/** @test Verifies that TYPE_COMMAND reaches the user onReceive callback */
+void test_type_command_routing(void) {
+    g_callbackTriggered = false;
+    link.onReceive(testCallback);
+
+    TestPayload data = { 99, 9.9f };
+    link.send(tinylink::TYPE_COMMAND, data);
+
+    while (adapter.available() > 0) {
+        link.update();
+        if (link.available()) link.flush();
+    }
+
+    TEST_ASSERT_TRUE(g_callbackTriggered);
+    TEST_ASSERT_EQUAL_UINT8(tinylink::TYPE_COMMAND, link.type());
+}
+
+/** @test Verifies that TYPE_ACK frames are never surfaced to the user via available()/onReceive() */
+void test_type_ack_not_user_visible(void) {
+    static int g_callCount;
+    g_callCount = 0;
+    link.onReceive([](const TestPayload&) { g_callCount++; });
+
+    TestPayload data = { 1, 1.0f };
+    link.send(tinylink::TYPE_DATA, data);
+
+    // Drain all frames: DATA (loopback) + ACKs
+    while (adapter.available() > 0) {
+        link.update();
+        if (link.available()) link.flush();
+    }
+
+    // onReceive fired exactly once (for the looped-back DATA), never for ACK frames
+    TEST_ASSERT_EQUAL_INT(1, g_callCount);
+    TEST_ASSERT_FALSE(link.available());
+}
+
+
 /**
  * @brief Entry point for the PlatformIO Native Test Runner.
  * 
- * Final v1.0.0 "Space-Grade" Verification Suite: 36 Tests.
+ * v0.5.0 Verification Suite.
  * verified against AVR (8-bit) and ESP/PC (32/64-bit) architectures.
  */
 int main(int argc, char **argv) {
@@ -1093,6 +1351,18 @@ int main(int argc, char **argv) {
     RUN_TEST(test_truncated_cobs_rejection);
     RUN_TEST(test_fletcher_overflow_stability);
     RUN_TEST(test_crc_endian_sensitivity);
+
+    // --- v0.5.0 Protocol: Handshake, ACK, and State Machine ---
+    RUN_TEST(test_handshake_completes);            /**< Loopback self-completes STATUS exchange */
+    RUN_TEST(test_send_blocked_during_connecting); /**< send() is a no-op in CONNECTING */
+    RUN_TEST(test_send_blocked_during_handshaking);/**< send() is a no-op in HANDSHAKING */
+    RUN_TEST(test_ack_received_on_data);           /**< onAckReceived fires after loopback DATA */
+    RUN_TEST(test_ack_failed_on_timeout);          /**< onAckFailed fires after ackTimeout */
+    RUN_TEST(test_handshake_retry);                /**< Retries happen before giving up */
+    RUN_TEST(test_handshake_failed_callback);      /**< onHandshakeFailed fires after max retries */
+    RUN_TEST(test_state_transitions);              /**< CONNECTING→WAIT_FOR_SYNC verified */
+    RUN_TEST(test_type_command_routing);           /**< TYPE_COMMAND reaches user onReceive */
+    RUN_TEST(test_type_ack_not_user_visible);      /**< TYPE_ACK never fires user onReceive */
 
     return UNITY_END();
 }
