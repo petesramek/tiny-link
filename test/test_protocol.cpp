@@ -287,7 +287,8 @@ void test_buffer_overflow_protection(void) {
     TestPayload data = { 88, 8.8f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
-    while (adapter.available() > 0 && !link.available()) {
+    int spins = 0, max_spins = 10;
+    while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
         link.update();
     }
     
@@ -374,7 +375,8 @@ void test_float_extremes(void) {
     TestPayload data = { 100, NAN };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
-    while (adapter.available() > 0 && !link.available()) {
+    int spins = 0, max_spins = 10;
+    while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
         link.update();
     }
     
@@ -743,7 +745,8 @@ void test_payload_zero_transparency(void) {
     TestPayload data = { 0x11002233, 0.0f }; // Contains two zeros in binary
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
-    while (adapter.available() > 0 && !link.available()) {
+    int spins = 0, max_spins = 10;
+    while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
         link.update();
     }
     
