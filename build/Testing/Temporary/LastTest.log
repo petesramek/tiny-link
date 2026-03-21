@@ -1,118 +1,94 @@
-Start testing: Mar 21 22:10 CET
+Start testing: Mar 21 22:15 CET
 ----------------------------------------------------------
 1/1 Testing: tiny_link_tests
 1/1 Test: tiny_link_tests
 Command: "/Users/petrsramek/Documents/Projects/tiny-link/build/tiny_link_tests"
 Directory: /Users/petrsramek/Documents/Projects/tiny-link/build
-"tiny_link_tests" start time: Mar 21 22:10 CET
+"tiny_link_tests" start time: Mar 21 22:15 CET
 Output:
 ----------------------------------------------------------
-[FAIL] test_cobs_loopback
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_cobs_zero_payload
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_async_callback
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_cobs_loopback
+[PASS] test_cobs_zero_payload
+[PASS] test_async_callback
 [PASS] test_callback_burst
-[FAIL] test_cobs_resync
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_cobs_resync
 [PASS] test_cobs_double_delimiter
-[FAIL] test_double_delimiter_resilience
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_mid_frame_sync_reset
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_double_delimiter_resilience
+[PASS] test_mid_frame_sync_reset
 [PASS] test_cold_boot_sync
 [PASS] test_micro_frame_noise_suppression
 [PASS] test_cobs_crc_failure
-[FAIL] test_timeout_cleanup
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_buffer_overflow_protection
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_buffer_isolation
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_timeout_cleanup
+[PASS] test_buffer_overflow_protection
+[PASS] test_buffer_isolation
 [PASS] test_cobs_read_overflow_safety
 [FAIL] test_ghost_zero_detection
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:646: expected 1 == link.getStats().crcErrs
+/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:652: expected 1 == link.getStats().crcErrs
 [FAIL] test_single_bit_flip_detection
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:607: expected 1 == link.getStats().crcErrs
+/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:613: expected 1 == link.getStats().crcErrs
 [PASS] test_swapped_byte_detection
 [PASS] test_type_filtering
 [PASS] test_sequence_tracking
 [PASS] test_sequence_wrap_around
-[FAIL] test_float_extremes
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_float_extremes
 [PASS] test_type_validation
 [PASS] test_structural_size_mismatch
-[FAIL] test_timeout_boundary
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_timeout_boundary
 [PASS] test_timeout_precision
 [PASS] test_zero_gap_stress
 [PASS] test_minimal_interframe_spacing
-[FAIL] test_payload_zero_transparency
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_payload_zero_transparency
 [PASS] test_short_frame_rejection
 [PASS] test_zero_length_header_rejection
-[FAIL] test_minimum_payload
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_leading_zero_payload
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_trailing_zero_payload
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_minimum_payload
+[PASS] test_leading_zero_payload
+[PASS] test_trailing_zero_payload
 [PASS] test_protocol_mtu_limit
-[FAIL] test_split_integer_alignment
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_reentrant_lock_safety
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_split_integer_alignment
+[PASS] test_reentrant_lock_safety
 [PASS] test_endless_delimiter_resilience
 [PASS] test_fletcher_contrast_integrity
 [PASS] test_endian_checksum_consistency
 [PASS] test_fragmented_arrival_persistence
-[FAIL] test_signed_boundary_integrity
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_callback_hotswap_safety
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
-[FAIL] test_checksum_independence
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_signed_boundary_integrity
+[PASS] test_callback_hotswap_safety
+[PASS] test_checksum_independence
 [PASS] test_cobs_truncation_safety
 [PASS] test_mid_payload_delimiter_reset
-[FAIL] test_zero_sum_integrity
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_zero_sum_integrity
 [PASS] test_trailing_bit_integrity
 [PASS] test_fletcher_modulo_boundary
 [PASS] test_tight_frame_overlap
-[FAIL] test_callback_deregistration_safety
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_callback_deregistration_safety
 [PASS] test_struct_packing_integrity
 [PASS] test_unflushed_data_protection
 [PASS] test_primitive_type_support
 [PASS] test_truncated_cobs_rejection
-[FAIL] test_fletcher_overflow_stability
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+[PASS] test_fletcher_overflow_stability
 [PASS] test_crc_endian_sensitivity
 [FAIL] test_handshake_completes
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:1078: expected tinylink::TinyState::WAIT_FOR_SYNC == link.state()
+/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:1080: expected tinylink::TinyState::WAIT_FOR_SYNC == link.state()
 [PASS] test_send_blocked_during_connecting
 [FAIL] test_send_blocked_during_handshaking
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:1115: expected tinylink::TinyState::HANDSHAKING == handshakeLink.state()
+/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:1116: expected tinylink::TinyState::HANDSHAKING == handshakeLink.state()
 [FAIL] test_ack_received_on_data
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:1142: assertion failed: g_ackFired
 [PASS] test_ack_failed_on_timeout
 [PASS] test_handshake_retry
 [PASS] test_handshake_failed_callback
 [FAIL] test_state_transitions
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:1223: expected tinylink::TinyState::WAIT_FOR_SYNC == link.state()
-[FAIL] test_type_command_routing
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:1224: expected tinylink::TinyState::WAIT_FOR_SYNC == link.state()
+[PASS] test_type_command_routing
 [FAIL] test_type_ack_not_user_visible
-/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:100: Stuck: adapter buffer did not drain
+/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp:1254: expected false: link.available()
 
-67 tests, 31 failures
+67 tests, 7 failures
 <end of output>
-Test time =   0.01 sec
+Test time =   0.39 sec
 ----------------------------------------------------------
 Test Failed.
-"tiny_link_tests" end time: Mar 21 22:10 CET
+"tiny_link_tests" end time: Mar 21 22:15 CET
 "tiny_link_tests" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Mar 21 22:10 CET
+End testing: Mar 21 22:15 CET
