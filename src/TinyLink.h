@@ -363,8 +363,11 @@ namespace tinylink {
 		// Update: Main RX State Machine
 		// -------------------------------------------------------------------------
 		void update() {
-			if (!_hw->isOpen() || _hasNew) return;
-			// ---- Handshake and timeout logic: unchanged ----
+			if (!_hw->isOpen() || _hasNew) {
+				return;
+			}
+
+			// --- Handshake and timeout logic ---
 			if (_state == TinyState::CONNECTING) {
 				if (_handshakeTimer == 0) {
 					_sendStatus();
@@ -394,32 +397,21 @@ namespace tinylink {
 				_stats.timeouts++;
 			}
 
+			// --- RX Parse state machine ---
 			while (_hw->available() > 0) {
 				int incoming = _hw->read();
-
-				if (incoming < 0) {
-					break;
-				}
+				if (incoming < 0) break;
 
 				uint8_t c = (uint8_t)incoming;
 				_lastByte = _hw->millis();
-				// --- Robust RX resync: Discard until delimiter ---
-				if (_inResync) {
-					if (c == 0x00) {
-						_inResync = false;
-						_rawIdx = 0;    // FULL state reset!
-						break;
-					}
-					continue;           // Discard all other bytes.
-				}
-				// Frame delimiter detected (COBS frame boundary)
+
 				if (c == 0x00) {
-					if (_rawIdx >= 5) {
+					// Frame boundary detected
+					if (_state == TinyState::IN_FRAME && _rawIdx > 0) {
+						// Try to decode the just-completed frame
 						size_t dLen = cobs_decode(_rawBuf, _rawIdx, _pBuf);
-						_rawIdx = 0;
-						if (_state == TinyState::IN_FRAME) {
-							_state = TinyState::WAIT_FOR_SYNC;
-						}
+						_rawIdx = 0; // Always reset after delimiter
+						_state = TinyState::WAIT_FOR_SYNC;
 
 						if (dLen >= 3) {
 							uint8_t msgType = _pBuf[0];
@@ -450,40 +442,33 @@ namespace tinylink {
 								}
 								else {
 									_stats.crcErrs++;
-									_inResync = true;
 								}
 							}
 							else {
 								_stats.crcErrs++;
-								_inResync = true;
 							}
 						}
+						// else: frame was too short/bad; ignore
 					}
-					else {
-						_rawIdx = 0;
-						if (_state == TinyState::IN_FRAME) {
-							_state = TinyState::WAIT_FOR_SYNC;
-						}
-					}
+					// Always ready to start a new frame after delimiter
+					_state = TinyState::IN_FRAME;
+					_rawIdx = 0;
 					continue;
 				}
 
-				// Accumulate next frame byte
-				if (_rawIdx < sizeof(_rawBuf)) {
-					_rawBuf[_rawIdx++] = c;
-
-					if (_state == TinyState::WAIT_FOR_SYNC) {
-						_state = TinyState::IN_FRAME;
+				// Only accumulate frame bytes if we're in IN_FRAME state
+				if (_state == TinyState::IN_FRAME) {
+					if (_rawIdx < sizeof(_rawBuf)) {
+						_rawBuf[_rawIdx++] = c;
 					}
-				}
-				else {
-					_overflowErrs++;
-					_rawIdx = 0;
-					if (_state == TinyState::IN_FRAME) {
+					else {
+						// Buffer overflow: count error and revert to sync wait
+						_stats.crcErrs++;
 						_state = TinyState::WAIT_FOR_SYNC;
+						_rawIdx = 0;
 					}
-					_inResync = true;
 				}
+				// If not IN_FRAME, ignore data until delimiter resets us
 			}
 		}
 
