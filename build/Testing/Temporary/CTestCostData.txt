@@ -1,3 +1,0 @@
-tiny_link_tests 0 0
----
-tiny_link_tests

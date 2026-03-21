@@ -1,8 +1,0 @@
-[
-{
-  "directory": "/Users/petrsramek/Documents/Projects/tiny-link/build",
-  "command": "/usr/bin/c++ -DTINYLINK_NATIVE_TEST -I/Users/petrsramek/Documents/Projects/tiny-link/src -I/Users/petrsramek/Documents/Projects/tiny-link/test -g -std=gnu++11 -arch arm64 -Wall -Wextra -Wpedantic -O0 -g3 -o CMakeFiles/tiny_link_tests.dir/test/test_main.cpp.o -c /Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp",
-  "file": "/Users/petrsramek/Documents/Projects/tiny-link/test/test_main.cpp",
-  "output": "CMakeFiles/tiny_link_tests.dir/test/test_main.cpp.o"
-}
-]
