@@ -524,21 +524,6 @@ void test_crosstalk_rejection(void) {
     TEST_ASSERT_EQUAL_UINT16(1, linkLarge.getStats().crcErrs);
 }
 
-struct MaxBlock { uint8_t raw[235]; } __attribute__((packed)); // 235 + 5 = 240 (Safe)
-/** @test Verifies COBS behavior at the 254-byte block boundary */
-void test_cobs_max_block_boundary(void) {
-    tinylink::TinyLink<MaxBlock, LoopbackAdapter> maxLink(adapter);
-    MaxBlock data; 
-    memset(data.raw, 0xFF, 235); // Fill with non-zero data
-    
-    maxLink.send(tinylink::TYPE_DATA, data);
-    while(adapter.available() > 0) maxLink.update();
-    
-    TEST_ASSERT_TRUE(maxLink.available());
-    TEST_ASSERT_EQUAL_UINT8(0xFF, maxLink.peek().raw[0]);
-    TEST_ASSERT_EQUAL_UINT8(0xFF, maxLink.peek().raw[234]);
-}
-
 
 /** @test Verifies that a single bit-flip in the payload is caught by Fletcher-16 */
 void test_single_bit_flip_detection(void) {
@@ -631,7 +616,7 @@ void test_mid_frame_reset(void) {
 
 /** @test Verifies that the PLAIN_SIZE remains within the safe uint8_t bounds (255) */
 void test_protocol_mtu_limit(void) {
-    // 3 (Header) + 250 (Payload) + 2 (CRC) = 255
+    // 3 (Header) + 64 (max Payload) + 2 (CRC) = 69
     TEST_ASSERT_LESS_THAN_UINT32(256, (3 + sizeof(TestPayload) + 2));
 }
 
@@ -697,22 +682,6 @@ void test_payload_zero_transparency(void) {
     TEST_ASSERT_TRUE(link.available());
     TEST_ASSERT_EQUAL_UINT32(0x11002233, link.peek().uptime);
     TEST_ASSERT_EQUAL_FLOAT(0.0f, link.peek().value);
-}
-
-/** @test Verifies the exact boundary of the 64-byte buffer headroom */
-void test_buffer_headroom_boundary(void) {
-    // TestPayload PLAIN_SIZE is 13. Max allowed dLen is 13 + 64 = 77.
-    struct Giant { uint8_t raw[70]; } __attribute__((packed)); 
-    tinylink::TinyLink<Giant, LoopbackAdapter> giantLink(adapter);
-    
-    Giant g; memset(g.raw, 0xFF, 70);
-    giantLink.send('G', g); // Sends ~75 bytes
-    
-    link.clearStats();
-    while(adapter.available() > 0) link.update();
-    
-    // Should be caught as a crcErr because it fit in the rawBuf but size was wrong
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
 
 /** @test Verifies that micro-frames (noise) are silently ignored without logging errors */
@@ -940,17 +909,6 @@ void test_callback_deregistration_safety(void) {
     TEST_ASSERT_TRUE(link.available());
 }
 
-struct MaxJump { uint8_t data[230]; } __attribute__((packed)); // Stay under 240 limit
-/** @test Verifies COBS decoding at the maximum possible block jump distance */
-void test_cobs_max_jump_safety(void) {
-    tinylink::TinyLink<MaxJump, LoopbackAdapter> jLink(adapter);
-    MaxJump j; memset(j.data, 0x01, 230);
-    
-    jLink.send('J', j);
-    while(adapter.available() > 0) jLink.update();
-    TEST_ASSERT_TRUE(jLink.available());
-}
-
 /** @test Verifies that the struct has no "hidden" padding bytes by checking total size */
 void test_struct_packing_integrity(void) {
     // uptime(4) + value(4) = 8. If sizeof is 9 or 12, packing failed.
@@ -1037,7 +995,6 @@ int main(int argc, char **argv) {
     RUN_TEST(test_timeout_cleanup);              /**< Automated partial frame buffer recovery */
     RUN_TEST(test_buffer_overflow_protection);   /**< Runaway TX/noise memory safety reset */
     RUN_TEST(test_buffer_isolation);             /**< Valid peek() data protection during RX */
-    RUN_TEST(test_buffer_headroom_boundary);     /**< Verified 64-byte structural headroom safety */
     RUN_TEST(test_cobs_read_overflow_safety);    /**< Decoder boundary-check protection */
     RUN_TEST(test_ghost_zero_detection);         /**< Detection of bit-flips resulting in 0x00 */
     RUN_TEST(test_single_bit_flip_detection);    /**< High-sensitivity single bit-level integrity */
@@ -1062,7 +1019,6 @@ int main(int argc, char **argv) {
     RUN_TEST(test_short_frame_rejection);        /**< Rejection of frames below protocol minimum */
     RUN_TEST(test_zero_length_header_rejection); /**< Malformed length-field protection */
     RUN_TEST(test_minimum_payload);              /**< Robustness with 1-byte struct payloads */
-    RUN_TEST(test_cobs_max_block_boundary);      /**< COBS 254-byte block boundary stability */
     RUN_TEST(test_leading_zero_payload);         /**< Encoding check for zeros at byte-0 */
     RUN_TEST(test_trailing_zero_payload);        /**< Encoding check for zeros at final byte */
     RUN_TEST(test_protocol_mtu_limit);           /**< Compile-time safety for MTU boundaries */
@@ -1085,7 +1041,6 @@ int main(int argc, char **argv) {
     RUN_TEST(test_fletcher_modulo_boundary);       /**< Modulo-255 math check */
     RUN_TEST(test_tight_frame_overlap);            /**< Back-to-back sync stress */
     RUN_TEST(test_callback_deregistration_safety); /**< Null-pointer hot-swap safety */
-    RUN_TEST(test_cobs_max_jump_safety);           /**< Max block-length COBS check */
 
     RUN_TEST(test_struct_packing_integrity);
     RUN_TEST(test_unflushed_data_protection);

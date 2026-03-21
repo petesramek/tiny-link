@@ -170,7 +170,7 @@ namespace tinylink {
         // Constructor
         // -------------------------------------------------------------------------
         TinyLink(Adapter& hw) : _hw(&hw) {
-            static_assert(sizeof(T) <= 240, "TinyLink: Payload exceeds 240 bytes (COBS limit).");
+            static_assert(sizeof(T) <= 64, "TinyLink: Payload exceeds 64 bytes. TinyLink is designed for micro-messages.");
             static_assert(alignof(T) == 1, "TinyLink: Data type must be packed. Use __attribute__((packed)).");
         }
 
