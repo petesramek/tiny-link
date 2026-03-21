@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file TinyLink.h
  * @brief Main template engine for the TinyLink protocol.
  */
@@ -24,18 +24,19 @@ namespace tinylink {
     //
     // avr-gcc does not ship <type_traits>, so this block is skipped on AVR targets.
     // On desktop/ESP builds, this enforces the adapter contract at compile time.
+    // std::declval<T>() is used so the adapter need not be default-constructible.
     //
     template <typename A>
     struct is_valid_adapter {
     private:
         template <typename T>
         static auto check(int) -> decltype(
-            (void) static_cast<bool>(T().isOpen()),
-            (void) static_cast<int>(T().available()),
-            (void) static_cast<int>(T().read()),
-            (void)T().write(uint8_t(0)),
-            (void)T().write((const uint8_t*)0, size_t(0)),
-            (void) static_cast<unsigned long>(T().millis()),
+            (void) static_cast<bool>(std::declval<T>().isOpen()),
+            (void) static_cast<int>(std::declval<T>().available()),
+            (void) static_cast<int>(std::declval<T>().read()),
+            (void)std::declval<T>().write(uint8_t(0)),
+            (void)std::declval<T>().write((const uint8_t*)0, size_t(0)),
+            (void) static_cast<unsigned long>(std::declval<T>().millis()),
             std::true_type{}
             );
 
@@ -61,7 +62,6 @@ namespace tinylink {
     using adapter_check_t = int;
 
 #endif
-
 
     // -----------------------------------------------------------------------------
     //  TinyLink Engine Template
@@ -172,7 +172,6 @@ namespace tinylink {
 
         unsigned long _lastByte = 0;
         unsigned long _timeout = 250;
-
 
     public:
 
