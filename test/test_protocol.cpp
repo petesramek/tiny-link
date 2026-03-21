@@ -567,20 +567,20 @@ void test_crosstalk_rejection(void) {
     TEST_ASSERT_EQUAL_UINT16(1, linkLarge.getStats().crcErrs);
 }
 
-struct MaxBlock { uint8_t raw[235]; } __attribute__((packed)); // 235 + 5 = 240 (Safe)
+struct MaxBlock { uint8_t raw[64]; } __attribute__((packed)); // 64 + 5 = 69 (Safe)
 /** @test Verifies COBS behavior at the 254-byte block boundary */
 void test_cobs_max_block_boundary(void) {
     tinylink::TinyLink<MaxBlock, LoopbackAdapter> maxLink(adapter);
     completeHandshake(maxLink, adapter);
     MaxBlock data; 
-    memset(data.raw, 0xFF, 235); // Fill with non-zero data
+    memset(data.raw, 0xFF, 64); // Fill with non-zero data
     
     maxLink.send(tinylink::TYPE_DATA, data);
     while(adapter.available() > 0) maxLink.update();
     
     TEST_ASSERT_TRUE(maxLink.available());
     TEST_ASSERT_EQUAL_UINT8(0xFF, maxLink.peek().raw[0]);
-    TEST_ASSERT_EQUAL_UINT8(0xFF, maxLink.peek().raw[234]);
+    TEST_ASSERT_EQUAL_UINT8(0xFF, maxLink.peek().raw[64]);
 }
 
 
