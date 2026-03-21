@@ -371,13 +371,12 @@ namespace tinylink {
 				}
 				else if (_hw->millis() - _handshakeTimer > _handshakeTimeout) {
 					if (_handshakeRetryCount < _maxHandshakeRetries) {
-						_handshakeRetryCount++; _sendStatus();
+						_handshakeRetryCount++;
+						_sendStatus();
 					}
-					else {
-						if (_onHandshakeFailed) _onHandshakeFailed();
-						_handshakeRetryCount = 0;
-						_handshakeTimer = _hw->millis() | 1UL;
-					}
+					else if (_onHandshakeFailed) _onHandshakeFailed();
+					_handshakeRetryCount = 0;
+					_handshakeTimer = _hw->millis() | 1UL;
 				}
 			}
 
@@ -409,7 +408,7 @@ namespace tinylink {
 					if (c == 0x00) {
 						_inResync = false;
 						_rawIdx = 0;    // FULL state reset!
-						continue;       // Do *not* process this 0x00 as frame start.
+						break;
 					}
 					continue;           // Discard all other bytes.
 				}
@@ -426,23 +425,23 @@ namespace tinylink {
 							uint8_t msgType = _pBuf[0];
 							uint8_t msgSeq = _pBuf[1];
 
-                            // Expected decoded frame size depends on message type
-                            size_t expLen;
-                            if (msgType == TYPE_ACK) {
-                                expLen = 3 + sizeof(TinyAck) + 2;
-                            }
-                            else if (msgType == TYPE_STATUS) {
-                                expLen = 3 + sizeof(TinyStatusPayload) + 2;
-                            }
-                            else {
-                                expLen = PLAIN_SIZE;
-                            }
+							// Expected decoded frame size depends on message type
+							size_t expLen;
+							if (msgType == TYPE_ACK) {
+								expLen = 3 + sizeof(TinyAck) + 2;
+							}
+							else if (msgType == TYPE_STATUS) {
+								expLen = 3 + sizeof(TinyStatusPayload) + 2;
+							}
+							else {
+								expLen = PLAIN_SIZE;
+							}
 
 							if (dLen == expLen) {
 								uint16_t calc = fletcher16(_pBuf, dLen - 2);
-                                uint16_t recv =
-                                    uint16_t(_pBuf[dLen - 2]) |
-                                    (uint16_t(_pBuf[dLen - 1]) << 8);
+								uint16_t recv =
+									uint16_t(_pBuf[dLen - 2]) |
+									(uint16_t(_pBuf[dLen - 1]) << 8);
 
 								if (calc == recv) {
 									if (_processFrame(msgType, msgSeq)) {
