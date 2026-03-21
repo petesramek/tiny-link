@@ -133,16 +133,35 @@ void test_cobs_zero_payload(void) {
  * Verifies that the 0x00 delimiter allows recovery from leading junk data.
  */
 void test_cobs_resync(void) {
+    printf("[TEST] adapter.available()=%d\n", adapter.available());
+    printf("[TEST] link.available()=%d\n", link.available());
+
     uint8_t junk[] = { 0xFF, 0xAA, 0x12, 0x45 }; 
     adapter.inject(junk, sizeof(junk));
+    link.update();
+
+    printf("[TEST] adapter.available()=%d\n", adapter.available());
+    printf("[TEST] link.available()=%d\n", link.available());
 
     TestPayload data = { 1, 1.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
+    printf("[TEST] adapter.available()=%d\n", adapter.available());
+    printf("[TEST] link.available()=%d\n", link.available());
+
     int spins = 0, max_spins = 10;
     while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
+        printf("[TEST] adapter.available()=%d\n", adapter.available());
+        printf("[TEST] link.available()=%d\n", link.available());
+
         link.update();
+
+        printf("[TEST] adapter.available()=%d\n", adapter.available());
+        printf("[TEST] link.available()=%d\n", link.available());
     }
+
+    printf("[TEST] adapter.available()=%d\n", adapter.available());
+    printf("[TEST] link.available()=%d\n", link.available());
 
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "Link failed to resync after junk data");
 }
