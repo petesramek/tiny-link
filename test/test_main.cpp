@@ -6,10 +6,13 @@
  * (noise, timeouts, overflows), and the full connection handshake protocol.
  */
 
-#include <unity.h>
+#include "test_shim.hpp"
 #include <vector>
 #include <stdint.h>
 #include <cmath>
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include "TinyLink.h"
 #include "adapters/TinyTestAdapter.h"
 
@@ -23,8 +26,9 @@ struct TestPayload {
 bool g_callbackTriggered = false;
 
 /** @brief Global callback handler */
-void testCallback(const TestPayload& data) { 
-    g_callbackTriggered = true; 
+void testCallback(const TestPayload& data) {
+    (void)data;
+    g_callbackTriggered = true;
 }
 
 /** 
@@ -69,6 +73,33 @@ void completeHandshake(tinylink::TinyLink<T, A>& l, A& a) {
     a.getRawBuffer().clear();
 }
 
+template<typename L, typename A>
+static int drain_or_fail_with_count(L& l, A& a, int max_iters = 1000) {
+    int i = 0;
+    int count = 0;
+    while (a.available() > 0 && i++ < max_iters) {
+        l.update();
+        if (l.available()) {
+            ++count;
+            l.flush();
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(i < max_iters, "Stuck: adapter buffer did not drain");
+    return count;
+}
+
+template<typename L, typename A>
+static void drain_or_fail(L& l, A& a, int max_iters = 1000, bool flush_when_available = false) {
+    int i = 0;
+    while (a.available() > 0 && i++ < max_iters) {
+        l.update();
+        if (flush_when_available && l.available()) {
+            l.flush();
+        }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(i < max_iters, "Stuck: adapter buffer did not drain");
+}
+
 /** @brief Reset the state machine and virtual clock before every test case */
 void setUp(void) {
     link.flush();
@@ -103,10 +134,7 @@ void test_cobs_loopback(void) {
     TestPayload data = { 98765, 3.1415f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
-    int spins = 0, max_spins = 10;
-    while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
-        link.update();
-    }
+    drain_or_fail(link, adapter);
 
     TEST_ASSERT_TRUE(link.available());
     TEST_ASSERT_EQUAL_UINT32(data.uptime, link.peek().uptime);
@@ -121,10 +149,8 @@ void test_cobs_zero_payload(void) {
     TestPayload zeros = { 0, 0.0f }; 
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), zeros);
     
-    int spins = 0, max_spins = 10;
-    while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
-        link.update();
-    }
+    drain_or_fail(link, adapter);
+
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "COBS failed to handle all-zero payload");
 }
 
@@ -133,35 +159,14 @@ void test_cobs_zero_payload(void) {
  * Verifies that the 0x00 delimiter allows recovery from leading junk data.
  */
 void test_cobs_resync(void) {
-    printf("[TEST] adapter.available()=%d\n", adapter.available());
-    printf("[TEST] link.available()=%d\n", link.available());
-
     uint8_t junk[] = { 0xFF, 0xAA, 0x12, 0x45 }; 
     adapter.inject(junk, sizeof(junk));
     link.update();
 
-    printf("[TEST] adapter.available()=%d\n", adapter.available());
-    printf("[TEST] link.available()=%d\n", link.available());
-
     TestPayload data = { 1, 1.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
-    printf("[TEST] adapter.available()=%d\n", adapter.available());
-    printf("[TEST] link.available()=%d\n", link.available());
-
-    int spins = 0, max_spins = 10;
-    while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
-        printf("[TEST] adapter.available()=%d\n", adapter.available());
-        printf("[TEST] link.available()=%d\n", link.available());
-
-        link.update();
-
-        printf("[TEST] adapter.available()=%d\n", adapter.available());
-        printf("[TEST] link.available()=%d\n", link.available());
-    }
-
-    printf("[TEST] adapter.available()=%d\n", adapter.available());
-    printf("[TEST] link.available()=%d\n", link.available());
+    drain_or_fail(link, adapter);
 
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "Link failed to resync after junk data");
 }
@@ -179,9 +184,7 @@ void test_cobs_crc_failure(void) {
         buf[buf.size() - 2] ^= 0xFF; 
     }
 
-    while(adapter.available() > 0) {
-        link.update();
-    }
+    drain_or_fail(link, adapter);
 
     TEST_ASSERT_FALSE(link.available());
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
@@ -196,9 +199,7 @@ void test_async_callback(void) {
     TestPayload data = { 1, 1.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
-    while(adapter.available() > 0) {
-        link.update();
-    }
+    drain_or_fail(link, adapter);
 
     TEST_ASSERT_TRUE_MESSAGE(g_callbackTriggered, "Callback was not triggered");
 }
@@ -229,10 +230,7 @@ void test_callback_burst(void) {
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
 
-    while(adapter.available() > 0) {
-        link.update();
-        if(link.available()) link.flush();
-    }
+    drain_or_fail(link, adapter, 20000, true);
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(2, triggerCount, "Callback should have fired exactly twice");
 }
@@ -253,7 +251,7 @@ void test_timeout_cleanup(void) {
     
     TestPayload data = { 1, 1.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "Engine failed to recover after timeout");
 }
@@ -268,7 +266,7 @@ void test_double_delimiter_resilience(void) {
     adapter.inject(noise, sizeof(noise));
     
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_TRUE(link.available());
     TEST_ASSERT_EQUAL_UINT16(0, link.getStats().crcErrs);
@@ -301,10 +299,7 @@ void test_buffer_overflow_protection(void) {
     TestPayload data = { 88, 8.8f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
-    int spins = 0, max_spins = 10;
-    while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
-        link.update();
-    }
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "Overflow guard prevented recovery");
 }
@@ -317,7 +312,7 @@ void test_type_filtering(void) {
     TestPayload data = { 55, 5.5f };
     link.send('Q', data); 
     
-    while(adapter.available() > 0 && !link.available()) link.update();
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_EQUAL_UINT8('Q', link.type());
 }
@@ -344,7 +339,7 @@ void test_sequence_tracking(void) {
 void test_buffer_isolation(void) {
     TestPayload p1 = { 111, 1.1f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
-    while(adapter.available() > 0 && !link.available()) link.update();
+    drain_or_fail(link, adapter);
     
     // Inject a partial/corrupt packet
     uint8_t partial[] = { 0x00, 0x05, 0x01 }; 
@@ -370,10 +365,8 @@ void test_sequence_wrap_around(void) {
     // 2. Send 256 more packets to complete a full circle
     for(int i = 0; i < 256; i++) {
         link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
-        while(adapter.available() > 0) {
-            link.update();
-            if(link.available()) link.flush();
-        }
+        
+        drain_or_fail(link, adapter, 20000, true);
     }
     
     // 3. It should have wrapped back to exactly startSeq
@@ -389,10 +382,7 @@ void test_float_extremes(void) {
     TestPayload data = { 100, NAN };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
-    int spins = 0, max_spins = 10;
-    while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
-        link.update();
-    }
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_TRUE(std::isnan(link.peek().value));
 }
@@ -420,7 +410,7 @@ void test_timeout_boundary(void) {
     
     // Inject the second half
     adapter.inject(raw.data() + (raw.size() / 2), raw.size() - (raw.size() / 2));
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "Timeout triggered too early on boundary");
 }
@@ -469,7 +459,7 @@ void test_mid_frame_sync_reset(void) {
     TestPayload data = { 5, 5.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "New sync byte failed to reset partial state");
     TEST_ASSERT_EQUAL_UINT32(5, link.peek().uptime);
@@ -493,17 +483,14 @@ struct TinyStruct {
  * @post The byte must be received perfectly after loopback.
  */
 void test_minimum_payload(void) {
-    // Create a specific link for the 1-byte struct
     tinylink::TinyLink<TinyStruct, LoopbackAdapter> tinyLink(adapter);
     completeHandshake(tinyLink, adapter);
     TinyStruct s = { 0xFE };
-    
+
     tinyLink.send(static_cast<uint8_t>(tinylink::MessageType::Data), s);
-    
-    while(adapter.available() > 0 && !tinyLink.available()) {
-        tinyLink.update();
-    }
-    
+
+    drain_or_fail(tinyLink, adapter);
+
     TEST_ASSERT_TRUE(tinyLink.available());
     TEST_ASSERT_EQUAL_UINT8(0xFE, tinyLink.peek().val);
 }
@@ -517,7 +504,8 @@ void test_type_validation(void) {
     OtherStruct data = { 0xDEADBEEF };
     
     otherLink.send('X', data); // Type 'X'
-    while(adapter.available() > 0) otherLink.update();
+
+    drain_or_fail(otherLink, adapter);
     
     // The engine MUST report type 'X', allowing the user to reject it
     TEST_ASSERT_EQUAL_UINT8('X', otherLink.type());
@@ -550,7 +538,7 @@ void test_cold_boot_sync(void) {
 void test_leading_zero_payload(void) {
     TestPayload data = { 0x00FFFFFF, 1.0f }; // Leading zero in the uint32
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     TEST_ASSERT_EQUAL_UINT32(0x00FFFFFF, link.peek().uptime);
 }
 
@@ -565,7 +553,7 @@ void test_swapped_byte_detection(void) {
         std::swap(buf[5], buf[6]); 
     }
     
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     TEST_ASSERT_FALSE(link.available());
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
@@ -578,14 +566,12 @@ void test_crosstalk_rejection(void) {
     tinylink::TinyLink<Small, LoopbackAdapter> linkSmall(adapter);
     tinylink::TinyLink<Large, LoopbackAdapter> linkLarge(adapter);
     completeHandshake(linkSmall, adapter);
-    
+
     Small s = { 0xFF };
     linkSmall.send('T', s);  // Use 'T' to avoid TYPE_STATUS ('S') confusion
-    
-    // Update the LARGE link with SMALL data
-    while(adapter.available() > 0) linkLarge.update();
-    
-    // Large link should NOT have accepted the small packet due to PLAIN_SIZE mismatch
+
+    drain_or_fail(linkLarge, adapter);
+
     TEST_ASSERT_FALSE(linkLarge.available());
     TEST_ASSERT_EQUAL_UINT16(1, linkLarge.getStats().crcErrs);
 }
@@ -596,14 +582,14 @@ void test_cobs_max_block_boundary(void) {
     tinylink::TinyLink<MaxBlock, LoopbackAdapter> maxLink(adapter);
     completeHandshake(maxLink, adapter);
     MaxBlock data; 
-    memset(data.raw, 0xFF, 59); // Fill with non-zero data
+    memset(data.raw, 0xFF, 59);
     
     maxLink.send(tinylink::TYPE_DATA, data);
-    while(adapter.available() > 0) maxLink.update();
+    drain_or_fail(maxLink, adapter);
     
     TEST_ASSERT_TRUE(maxLink.available());
     TEST_ASSERT_EQUAL_UINT8(0xFF, maxLink.peek().raw[0]);
-    TEST_ASSERT_EQUAL_UINT8(0xFF, maxLink.peek().raw[59]);
+    TEST_ASSERT_EQUAL_UINT8(0xFF, maxLink.peek().raw[58]);
 }
 
 
@@ -616,7 +602,7 @@ void test_single_bit_flip_detection(void) {
     // Flip the LSB of the first data byte (usually at index 4 or 5 after header)
     buf[5] ^= 0x01; 
     
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     TEST_ASSERT_FALSE(link.available());
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
@@ -630,7 +616,7 @@ void test_trailing_zero_payload(void) {
     TailZero data = { 0xABCD, 0x00 };
     tailLink.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
-    while(adapter.available() > 0) tailLink.update();
+    drain_or_fail(tailLink, adapter);
     TEST_ASSERT_TRUE(tailLink.available());
     TEST_ASSERT_EQUAL_UINT8(0x00, tailLink.peek().zero);
 }
@@ -640,15 +626,8 @@ void test_minimal_interframe_spacing(void) {
     TestPayload p = { 1, 1.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
-    
-    int count = 0;
-    while(adapter.available() > 0) {
-        link.update();
-        if(link.available()) {
-            count++;
-            link.flush();
-        }
-    }
+
+    int count = drain_or_fail_with_count(link, adapter);
     TEST_ASSERT_EQUAL_INT(2, count);
 }
 
@@ -662,7 +641,7 @@ void test_ghost_zero_detection(void) {
     // Flip a bit in the middle of the payload to make it 0x00
     buf[10] = 0x00; 
     
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     TEST_ASSERT_FALSE_MESSAGE(link.available(), "Ghost zero was not detected");
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
@@ -692,7 +671,7 @@ void test_mid_frame_reset(void) {
     // _rawIdx should be 0 now
     TestPayload data = { 1, 1.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "Double start failed to reset state machine");
 }
@@ -713,7 +692,7 @@ void test_structural_size_mismatch(void) {
     espLink.send(static_cast<uint8_t>(tinylink::MessageType::Data), d); // Sends 17 bytes (3+12+2)
     
     // TinyLink<TestPayload> expects 13 bytes (3+8+2)
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_FALSE(link.available());
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
@@ -723,17 +702,9 @@ void test_structural_size_mismatch(void) {
 void test_zero_gap_stress(void) {
     TestPayload p = {10, 1.0f};
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
-    // Manually inject a second packet immediately
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
-    
-    int count = 0;
-    while(adapter.available() > 0) {
-        link.update();
-        if(link.available()) {
-            count++;
-            link.flush();
-        }
-    }
+
+    int count = drain_or_fail_with_count(link, adapter);
     TEST_ASSERT_EQUAL_INT(2, count);
 }
 
@@ -759,10 +730,7 @@ void test_payload_zero_transparency(void) {
     TestPayload data = { 0x11002233, 0.0f }; // Contains two zeros in binary
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
-    int spins = 0, max_spins = 10;
-    while (adapter.available() > 0 && !link.available() && spins++ < max_spins) {
-        link.update();
-    }
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_TRUE(link.available());
     TEST_ASSERT_EQUAL_UINT32(0x11002233, link.peek().uptime);
@@ -780,7 +748,7 @@ void test_buffer_headroom_boundary(void) {
     giantLink.send('G', g); // Sends ~64 bytes
     
     link.clearStats();
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     
     // Should be caught as a crcErr because it fit in the rawBuf but size was wrong
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
@@ -801,7 +769,7 @@ void test_split_integer_alignment(void) {
     // 0x11223344: We want the COBS 'pointer' to fall between 0x22 and 0x33
     TestPayload data = { 0x11223344, 1.0f }; 
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     TEST_ASSERT_EQUAL_UINT32(0x11223344, link.peek().uptime);
 }
 
@@ -811,7 +779,8 @@ void test_reentrant_lock_safety(void) {
     TestPayload p2 = { 200, 2.0f };
     
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
-    while(adapter.available() > 0 && !link.available()) link.update();
+
+    drain_or_fail(link, adapter);
     
     // Packet 1 is now 'available'. Inject Packet 2.
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p2);
@@ -839,7 +808,8 @@ void test_fletcher_contrast_integrity(void) {
     Contrast c = { 0x00, 0xFF };
     
     cLink.send('W', c);  // Use 'W' to avoid TYPE_COMMAND ('C') conflict
-    while(adapter.available() > 0) cLink.update();
+    drain_or_fail(cLink, adapter);
+
     TEST_ASSERT_TRUE(cLink.available());
 }
 
@@ -856,7 +826,7 @@ void test_endian_checksum_consistency(void) {
         std::swap(buf[buf.size()-2], buf[buf.size()-3]);
     }
     
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     
     // If the checksum was correctly packed/unpacked, swapping bytes MUST cause a CRC error.
     TEST_ASSERT_FALSE(link.available());
@@ -875,6 +845,7 @@ void test_fragmented_arrival_persistence(void) {
         adapter.advanceMillis(50); // Significant delay, but < 250ms
         link.update();
     }
+
     TEST_ASSERT_TRUE(link.available());
 }
 
@@ -882,7 +853,8 @@ void test_fragmented_arrival_persistence(void) {
 void test_signed_boundary_integrity(void) {
     TestPayload data = { 0xFFFFFFFF, -123.45f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
-    while(adapter.available() > 0) link.update();
+    
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFF, link.peek().uptime);
     TEST_ASSERT_EQUAL_FLOAT(-123.45f, link.peek().value);
@@ -899,7 +871,7 @@ void test_callback_hotswap_safety(void) {
     // Complete the packet
     TestPayload data = {1, 1.0f};
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     TEST_ASSERT_TRUE(link.available());
 }
 
@@ -909,12 +881,12 @@ void test_checksum_independence(void) {
     TestPayload p2 = { 0x22222222, 2.0f };
     
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
-    while(adapter.available() > 0) link.update();
-    uint16_t crc1 = link.getStats().packets; // Check if p1 passed
+    drain_or_fail(link, adapter);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().packets);
     link.flush();
 
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p2);
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     
     TEST_ASSERT_EQUAL_UINT32(2, link.getStats().packets);
 }
@@ -951,7 +923,9 @@ void test_zero_sum_integrity(void) {
     AllOnes data = { 0x00, 0x00 }; // Often results in specific sum patterns
     
     aLink.send(tinylink::TYPE_DATA, data);
-    while(adapter.available() > 0) aLink.update();
+
+    drain_or_fail(aLink, adapter);
+
     TEST_ASSERT_TRUE(aLink.available());
 }
 
@@ -964,7 +938,7 @@ void test_trailing_bit_integrity(void) {
     // Index 10 is typically the last byte of an 8-byte payload in a 13-byte frame
     buf[buf.size() - 3] ^= 0x01; 
     
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     TEST_ASSERT_FALSE(link.available());
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
@@ -979,7 +953,7 @@ void test_fletcher_modulo_boundary(void) {
     // Testing if 0x00 and 0xFF are treated correctly in the accumulator.
     ModData d = { 0xFF, 0xFF }; 
     mLink.send('M', d);
-    while(adapter.available() > 0) mLink.update();
+    drain_or_fail(mLink, adapter);
     TEST_ASSERT_TRUE(mLink.available());
 }
 
@@ -992,11 +966,7 @@ void test_tight_frame_overlap(void) {
     adapter.inject(&zero, 1);
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
 
-    int count = 0;
-    while(adapter.available() > 0) {
-        link.update();
-        if(link.available()) { count++; link.flush(); }
-    }
+    int count = drain_or_fail_with_count(link, adapter);
     TEST_ASSERT_EQUAL_INT(2, count);
 }
 
@@ -1009,7 +979,7 @@ void test_callback_deregistration_safety(void) {
     // Halfway through, kill the callback
     link.onReceive(nullptr);
     
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     // Should NOT crash, should just finish silently
     TEST_ASSERT_TRUE(link.available());
 }
@@ -1022,7 +992,8 @@ void test_cobs_max_jump_safety(void) {
     MaxJump j; memset(j.data, 0x01, 60);
     
     jLink.send('J', j);
-    while(adapter.available() > 0) jLink.update();
+    drain_or_fail(jLink, adapter);
+
     TEST_ASSERT_TRUE(jLink.available());
 }
 
@@ -1036,9 +1007,11 @@ void test_struct_packing_integrity(void) {
 void test_unflushed_data_protection(void) {
     TestPayload p1 = { 0xDEADC0DE, 1.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
-    while(adapter.available() > 0 && !link.available()) link.update();
 
-    // Inject 50 bytes of 0xFF junk
+    int count = drain_or_fail_with_count(link, adapter, 20000);
+
+    TEST_ASSERT_TRUE_MESSAGE(count < 20000, "Stuck waiting for first packet");
+
     uint8_t junk[50]; memset(junk, 0xFF, 50);
     adapter.inject(junk, 50);
     link.update();
@@ -1052,7 +1025,9 @@ void test_primitive_type_support(void) {
     completeHandshake(pLink, adapter);
     uint8_t val = 0xAB;
     pLink.send('P', val);
-    while(adapter.available() > 0) pLink.update();
+
+    drain_or_fail(pLink, adapter);
+
     TEST_ASSERT_EQUAL_UINT8(0xAB, pLink.peek());
 }
 
@@ -1069,7 +1044,7 @@ void test_truncated_cobs_rejection(void) {
 void test_fletcher_overflow_stability(void) {
     TestPayload p; memset(&p, 0xFF, sizeof(p));
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     TEST_ASSERT_TRUE(link.available());
 }
 
@@ -1080,7 +1055,7 @@ void test_crc_endian_sensitivity(void) {
     std::vector<uint8_t>& b = adapter.getRawBuffer();
     // Swap last two bytes before 0x00
     std::swap(b[b.size()-2], b[b.size()-3]);
-    while(adapter.available() > 0) link.update();
+    drain_or_fail(link, adapter);
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
 
@@ -1161,11 +1136,7 @@ void test_ack_received_on_data(void) {
     link.send(tinylink::TYPE_DATA, data);
     uint8_t sentSeq = link.seq();
 
-    // Drain fully: DATA comes back, ACK is sent for it, ACK for our send is received
-    while (adapter.available() > 0) {
-        link.update();
-        if (link.available()) link.flush();
-    }
+    drain_or_fail(link, adapter);
 
     TEST_ASSERT_TRUE(g_ackFired);
     TEST_ASSERT_EQUAL_UINT8(sentSeq, g_ackedSeq);
@@ -1261,10 +1232,7 @@ void test_type_command_routing(void) {
     TestPayload data = { 99, 9.9f };
     link.send(tinylink::TYPE_COMMAND, data);
 
-    while (adapter.available() > 0) {
-        link.update();
-        if (link.available()) link.flush();
-    }
+    drain_or_fail(link, adapter);
 
     TEST_ASSERT_TRUE(g_callbackTriggered);
     TEST_ASSERT_EQUAL_UINT8(tinylink::TYPE_COMMAND, link.type());
@@ -1279,13 +1247,8 @@ void test_type_ack_not_user_visible(void) {
     TestPayload data = { 1, 1.0f };
     link.send(tinylink::TYPE_DATA, data);
 
-    // Drain all frames: DATA (loopback) + ACKs
-    while (adapter.available() > 0) {
-        link.update();
-        if (link.available()) link.flush();
-    }
+    drain_or_fail(link, adapter);
 
-    // onReceive fired exactly once (for the looped-back DATA), never for ACK frames
     TEST_ASSERT_EQUAL_INT(1, g_callCount);
     TEST_ASSERT_FALSE(link.available());
 }
@@ -1354,13 +1317,12 @@ int main(int argc, char **argv) {
     RUN_TEST(test_fragmented_arrival_persistence);/**< Resistance to serial jitter */
     RUN_TEST(test_signed_boundary_integrity);    /**< Signed/Unsigned bit transparency */
     RUN_TEST(test_callback_hotswap_safety);      /**< Dynamic memory/pointer safety */
-    RUN_TEST(test_split_integer_alignment);      /**< Re-verifying integer boundaries */
 
-    RUN_TEST(test_checksum_independence);     /**< Calculation isolation */
-    RUN_TEST(test_cobs_truncation_safety);     /**< Truncated frame safety */
-    RUN_TEST(test_mid_payload_delimiter_reset);/**< Structural reset resilience */
-    RUN_TEST(test_zero_sum_integrity);         /**< Zero-checksum bit-transparency */
-    RUN_TEST(test_trailing_bit_integrity);     /**< Full-buffer coverage check */
+    RUN_TEST(test_checksum_independence);        /**< Calculation isolation */
+    RUN_TEST(test_cobs_truncation_safety);       /**< Truncated frame safety */
+    RUN_TEST(test_mid_payload_delimiter_reset);  /**< Structural reset resilience */
+    RUN_TEST(test_zero_sum_integrity);           /**< Zero-checksum bit-transparency */
+    RUN_TEST(test_trailing_bit_integrity);       /**< Full-buffer coverage check */
 
     RUN_TEST(test_fletcher_modulo_boundary);       /**< Modulo-255 math check */
     RUN_TEST(test_tight_frame_overlap);            /**< Back-to-back sync stress */

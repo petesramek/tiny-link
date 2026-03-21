@@ -1,0 +1,4 @@
+/Users/petrsramek/Documents/Projects/tiny-link/build/CMakeFiles/tiny_link_tests.dir
+/Users/petrsramek/Documents/Projects/tiny-link/build/CMakeFiles/test.dir
+/Users/petrsramek/Documents/Projects/tiny-link/build/CMakeFiles/edit_cache.dir
+/Users/petrsramek/Documents/Projects/tiny-link/build/CMakeFiles/rebuild_cache.dir

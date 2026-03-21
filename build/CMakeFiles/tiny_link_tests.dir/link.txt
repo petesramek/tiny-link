@@ -1,0 +1,1 @@
+/usr/bin/c++ -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/tiny_link_tests.dir/test/test_main.cpp.o -o tiny_link_tests

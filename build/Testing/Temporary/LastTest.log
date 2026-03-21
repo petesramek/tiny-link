@@ -1,0 +1,19 @@
+Start testing: Mar 21 20:44 CET
+----------------------------------------------------------
+Unable to find executable: /Users/petrsramek/Documents/Projects/tiny-link/build/tiny_link_tests
+1/1 Testing: tiny_link_tests
+1/1 Test: tiny_link_tests
+Command: ""
+Directory: /Users/petrsramek/Documents/Projects/tiny-link/build
+"tiny_link_tests" start time: 
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"tiny_link_tests" end time: Mar 21 20:44 CET
+"tiny_link_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Mar 21 20:44 CET

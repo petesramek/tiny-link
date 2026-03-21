@@ -377,8 +377,11 @@ namespace tinylink {
 						_handshakeRetryCount++;
 						_sendStatus();
 					}
-					else if (_onHandshakeFailed) _onHandshakeFailed();
-					_handshakeRetryCount = 0;
+					else {
+						if (_onHandshakeFailed) _onHandshakeFailed();
+						_handshakeRetryCount = 0;
+						_state = TinyState::WAIT_FOR_SYNC;  // ← Exit CONNECTING on failure
+					}
 					_handshakeTimer = _hw->millis() | 1UL;
 				}
 			}
@@ -398,7 +401,9 @@ namespace tinylink {
 			}
 
 			// --- RX Parse state machine ---
-			while (_hw->available() > 0) {
+			int rx_iterations = 0;
+			const int MAX_RX_ITERATIONS = 1000;
+			while (_hw->available() > 0 && rx_iterations++ < MAX_RX_ITERATIONS) {
 				int incoming = _hw->read();
 				if (incoming < 0) break;
 
