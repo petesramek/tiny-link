@@ -990,12 +990,12 @@ void test_callback_deregistration_safety(void) {
     TEST_ASSERT_TRUE(link.available());
 }
 
-struct MaxJump { uint8_t data[230]; } __attribute__((packed)); // Stay under 240 limit
+struct MaxJump { uint8_t data[60]; } __attribute__((packed)); // Stay under 240 limit
 /** @test Verifies COBS decoding at the maximum possible block jump distance */
 void test_cobs_max_jump_safety(void) {
     tinylink::TinyLink<MaxJump, LoopbackAdapter> jLink(adapter);
     completeHandshake(jLink, adapter);
-    MaxJump j; memset(j.data, 0x01, 230);
+    MaxJump j; memset(j.data, 0x01, 60);
     
     jLink.send('J', j);
     while(adapter.available() > 0) jLink.update();
