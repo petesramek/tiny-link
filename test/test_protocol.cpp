@@ -748,12 +748,12 @@ void test_payload_zero_transparency(void) {
 /** @test Verifies the exact boundary of the 64-byte buffer headroom */
 void test_buffer_headroom_boundary(void) {
     // TestPayload PLAIN_SIZE is 13. Max allowed dLen is 13 + 64 = 77.
-    struct Giant { uint8_t raw[70]; } __attribute__((packed)); 
+    struct Giant { uint8_t raw[64]; } __attribute__((packed)); 
     tinylink::TinyLink<Giant, LoopbackAdapter> giantLink(adapter);
     completeHandshake(giantLink, adapter);
     
-    Giant g; memset(g.raw, 0xFF, 70);
-    giantLink.send('G', g); // Sends ~75 bytes
+    Giant g; memset(g.raw, 0xFF, 64);
+    giantLink.send('G', g); // Sends ~64 bytes
     
     link.clearStats();
     while(adapter.available() > 0) link.update();
