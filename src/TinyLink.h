@@ -11,23 +11,20 @@
 #include <stdint.h>
 #include <string.h>
 
+#ifndef __AVR__
+#include <type_traits>
+#endif
+
 namespace tinylink {
 
-
+#ifndef __AVR__
     // -----------------------------------------------------------------------------
-    //  SFINAE Adapter Validation (C++11/14 compatible)
+    //  SFINAE Adapter Validation (C++11/14 compatible, non-AVR only)
     // -----------------------------------------------------------------------------
     //
-    // This ensures the Adapter type implements:
-    //   - bool isOpen()
-    //   - int  available()
-    //   - int  read()
-    //   - void write(uint8_t)
-    //   - void write(const uint8_t*, size_t)
-    //   - unsigned long millis()
-    // WITHOUT dereferencing a null pointer or requiring C++20 concepts.
+    // avr-gcc does not ship <type_traits>, so this block is skipped on AVR targets.
+    // On desktop/ESP builds, this enforces the adapter contract at compile time.
     //
-
     template <typename A>
     struct is_valid_adapter {
     private:
@@ -51,6 +48,19 @@ namespace tinylink {
 
     template <typename A>
     using adapter_check_t = typename std::enable_if<is_valid_adapter<A>::value, int>::type;
+
+#else
+    // -----------------------------------------------------------------------------
+    //  AVR: No SFINAE validation (avr-gcc has no <type_traits>)
+    // -----------------------------------------------------------------------------
+    //
+    // On AVR targets the adapter contract is trusted to be correct by the user.
+    // The template parameter is preserved for API compatibility.
+    //
+    template <typename A>
+    using adapter_check_t = int;
+
+#endif
 
 
     // -----------------------------------------------------------------------------
