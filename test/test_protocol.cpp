@@ -13,33 +13,6 @@
 #include "TinyLink.h"
 #include "adapters/TinyTestAdapter.h"
 
-/** @brief Sample payload to test struct alignment and float precision */
-struct TestPayload {
-    uint32_t uptime;
-    float value;
-} __attribute__((packed));
-
-/** @brief Global flag for callback verification */
-bool g_callbackTriggered = false;
-
-/** @brief Global callback handler */
-void testCallback(const TestPayload& data) { 
-    g_callbackTriggered = true; 
-}
-
-/** 
- * @class LoopbackAdapter
- * @brief Simulates a physical wire by piping TX directly into the RX buffer.
- */
-class LoopbackAdapter : public tinylink::TinyTestAdapter {
-public:
-    void write(uint8_t c) override { inject(&c, 1); }
-    void write(const uint8_t* b, size_t l) override { inject(b, l); }
-};
-
-LoopbackAdapter adapter;
-tinylink::TinyLink<TestPayload, LoopbackAdapter> link(adapter);
-
 /** 
  * @brief TEST: End-to-end success.
  * Verifies Send -> COBS Encode -> Decode -> Verify Fletcher-16.
