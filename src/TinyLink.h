@@ -9,6 +9,7 @@
 #include "TinyProtocol.h"
 #include "CobsCodec.h"
 #include "Fletcher16.h"
+#include "Packet.h"
 #include "version.h"
 #include <stdint.h>
 #include <string.h>
@@ -156,35 +157,20 @@ namespace tinylink {
                     if (_rawIdx >= 5) {
                         size_t dLen = tinylink::codec::cobs_decode(_rawBuf, _rawIdx, _pBuf, sizeof(_pBuf));
 
-                        if (dLen == PLAIN_SIZE) {
-                            uint16_t calc = tinylink::codec::fletcher16(_pBuf, PLAIN_SIZE - 2);
-
-                            // Clear, explicit Fletcher-16 extraction
-                            uint16_t recv =
-                                uint16_t(_pBuf[PLAIN_SIZE - 2]) |
-                                (uint16_t(_pBuf[PLAIN_SIZE - 1]) << 8);
-
-                            if (calc == recv) {
-                                _currType = _pBuf[0];
-                                _currSeq = _pBuf[1];
-
-                                memcpy(&_data, &_pBuf[3], sizeof(T));
-
+                        {
+                            uint8_t rtype = 0, rseq = 0;
+                            size_t payloadLen = tinylink::packet::unpack(_pBuf, dLen, &rtype, &rseq, (uint8_t*)&_data, sizeof(T));
+                            if (payloadLen == sizeof(T)) {
+                                _currType = rtype;
+                                _currSeq = rseq;
                                 _hasNew = true;
                                 _stats.packets++;
                                 _rawIdx = 0;
-
-                                if (_onReceive)
-                                    _onReceive(_data);
-
+                                if (_onReceive) _onReceive(_data);
                                 return;
-                            }
-                            else {
+                            } else {
                                 _stats.crcErrs++;
                             }
-                        }
-                        else {
-                            _stats.crcErrs++;
                         }
                     }
 
@@ -214,18 +200,9 @@ namespace tinylink {
             if (!_hw->isOpen()) return;
 
             _currSeq = _nextSeq++;
-
-            _pBuf[0] = type;
-            _pBuf[1] = _currSeq;
-            _pBuf[2] = (uint8_t)sizeof(T);
-
-            memcpy(&_pBuf[3], &payload, sizeof(T));
-
-            uint16_t chk = tinylink::codec::fletcher16(_pBuf, PLAIN_SIZE - 2);
-            _pBuf[PLAIN_SIZE - 2] = chk & 0xFF;
-            _pBuf[PLAIN_SIZE - 1] = (chk >> 8) & 0xFF;
-
-            size_t eLen = tinylink::codec::cobs_encode(_pBuf, PLAIN_SIZE, _rawBuf, sizeof(_rawBuf));
+            size_t plainLen = tinylink::packet::pack(type, _currSeq, (const uint8_t*)&payload, sizeof(T), _pBuf, sizeof(_pBuf));
+            if (plainLen == 0) { _stats.crcErrs++; return; }
+            size_t eLen = tinylink::codec::cobs_encode(_pBuf, plainLen, _rawBuf, sizeof(_rawBuf));
 
             _hw->write(0x00);
             _hw->write(_rawBuf, eLen);

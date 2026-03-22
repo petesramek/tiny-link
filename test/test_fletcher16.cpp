@@ -15,12 +15,6 @@
 using namespace tinylink::codec;
 
 // ---------------------------------------------------------------------------
-// setUp / tearDown (required by Unity)
-// ---------------------------------------------------------------------------
-void setUp(void) {}
-void tearDown(void) {}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -123,12 +117,8 @@ void test_fletcher16_native_stress(void) {
 
 #endif // TINYLINK_NATIVE_TESTS || TINYLINK_NATIVE_TEST
 
-// ---------------------------------------------------------------------------
-// Test runner
-// ---------------------------------------------------------------------------
-int main(void) {
-    UNITY_BEGIN();
-
+// Register the tests from this file. No UNITY_BEGIN()/END() here.
+void register_fletcher16_tests(void) {
     RUN_TEST(test_fletcher16_zero_length);
     RUN_TEST(test_fletcher16_single_zero_byte);
     RUN_TEST(test_fletcher16_single_nonzero_byte);
@@ -140,6 +130,4 @@ int main(void) {
 #if defined(TINYLINK_NATIVE_TESTS) || defined(TINYLINK_NATIVE_TEST)
     RUN_TEST(test_fletcher16_native_stress);
 #endif
-
-    return UNITY_END();
 }

@@ -10,50 +10,7 @@
 #include <vector>
 #include <stdint.h>
 #include <cmath>
-#include "TinyLink.h"
-#include "adapters/TinyTestAdapter.h"
-
-/** @brief Sample payload to test struct alignment and float precision */
-struct TestPayload {
-    uint32_t uptime;
-    float value;
-} __attribute__((packed));
-
-/** @brief Global flag for callback verification */
-bool g_callbackTriggered = false;
-
-/** @brief Global callback handler */
-void testCallback(const TestPayload& data) { 
-    g_callbackTriggered = true; 
-}
-
-/** 
- * @class LoopbackAdapter
- * @brief Simulates a physical wire by piping TX directly into the RX buffer.
- */
-class LoopbackAdapter : public tinylink::TinyTestAdapter {
-public:
-    void write(uint8_t c) override { inject(&c, 1); }
-    void write(const uint8_t* b, size_t l) override { inject(b, l); }
-};
-
-LoopbackAdapter adapter;
-tinylink::TinyLink<TestPayload, LoopbackAdapter> link(adapter);
-
-/** @brief Reset the state machine and virtual clock before every test case */
-void setUp(void) {
-    link.flush();
-    link.clearStats();
-    link.onReceive(nullptr);
-    adapter.setMillis(0);
-    adapter.getRawBuffer().clear();
-    g_callbackTriggered = false;
-}
-
-/** @brief Reset state after every test case */
-void tearDown(void) {
-    // No specific teardown required for this suite
-}
+#include "globals.h"
 
 /** 
  * @brief TEST: End-to-end success.
@@ -966,9 +923,7 @@ void test_crc_endian_sensitivity(void) {
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
 
-int main(int argc, char** argv) {
-    UNITY_BEGIN();
-
+void register_protocol_tests(void) {
     // --- Core Protocol & Asynchronous Events ---
     RUN_TEST(test_cobs_loopback);                /**< Basic encode/decode/verify pipeline */
     RUN_TEST(test_cobs_zero_payload);            /**< COBS transparency with all-zero data */
@@ -1041,6 +996,4 @@ int main(int argc, char** argv) {
     RUN_TEST(test_truncated_cobs_rejection);
     RUN_TEST(test_fletcher_overflow_stability);
     RUN_TEST(test_crc_endian_sensitivity);
-
-    return UNITY_END();
 }
