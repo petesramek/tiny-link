@@ -10,8 +10,7 @@
 #include <vector>
 #include <stdint.h>
 #include <cmath>
-#include "TinyLink.h"
-#include "adapters/TinyTestAdapter.h"
+#include "globals.h"
 
 /** 
  * @brief TEST: End-to-end success.
