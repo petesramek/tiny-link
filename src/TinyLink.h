@@ -7,6 +7,8 @@
 #define TINY_LINK_H
 
 #include "TinyProtocol.h"
+#include "CobsCodec.h"
+#include "Fletcher16.h"
 #include "version.h"
 #include <stdint.h>
 #include <string.h>
@@ -73,79 +75,6 @@ namespace tinylink {
         typedef void (*ReceiverCallback)(const T& data);
 
     private:
-
-        // -------------------------------------------------------------------------
-        // Fletcher-16 Checksum
-        // -------------------------------------------------------------------------
-        inline uint16_t fletcher16(const uint8_t* data, uint8_t len) {
-            uint16_t sum1 = 0xff, sum2 = 0xff;
-
-            while (len) {
-                uint8_t tlen = len > 20 ? 20 : len;
-                len -= tlen;
-                do {
-                    sum1 += *data++;
-                    sum2 += sum1;
-                } while (--tlen);
-
-                sum1 = (sum1 & 0xff) + (sum1 >> 8);
-                sum2 = (sum2 & 0xff) + (sum2 >> 8);
-            }
-
-            return (sum2 << 8) | sum1;
-        }
-
-        // -------------------------------------------------------------------------
-        // COBS Encoding (removes 0x00 from payload)
-        // -------------------------------------------------------------------------
-        size_t cobs_encode(const uint8_t* src, size_t len, uint8_t* dst) {
-            size_t read_idx = 0, write_idx = 1, code_idx = 0;
-            uint8_t code = 1;
-
-            while (read_idx < len) {
-                if (src[read_idx] == 0) {
-                    dst[code_idx] = code;
-                    code = 1;
-                    code_idx = write_idx++;
-                }
-                else {
-                    dst[write_idx++] = src[read_idx];
-                    code++;
-                    if (code == 0xFF) {
-                        dst[code_idx] = code;
-                        code = 1;
-                        code_idx = write_idx++;
-                    }
-                }
-                read_idx++;
-            }
-
-            dst[code_idx] = code;
-            return write_idx;
-        }
-
-        // -------------------------------------------------------------------------
-        // COBS Decoding (restores original bytes)
-        // -------------------------------------------------------------------------
-        size_t cobs_decode(const uint8_t* src, size_t len, uint8_t* dst) {
-            size_t read_idx = 0, write_idx = 0;
-
-            while (read_idx < len) {
-                uint8_t code = src[read_idx++];
-
-                if (code == 0 || (read_idx + code - 1) > len)
-                    return 0;  // Invalid frame
-
-                for (uint8_t i = 1; i < code; i++)
-                    dst[write_idx++] = src[read_idx++];
-
-                if (code < 0xFF && read_idx < len)
-                    dst[write_idx++] = 0;
-            }
-
-            return write_idx;
-        }
-
 
         // -------------------------------------------------------------------------
         // Member Variables
@@ -225,10 +154,10 @@ namespace tinylink {
                 // -------------------------------------------------------------
                 if (c == 0x00) {
                     if (_rawIdx >= 5) {
-                        size_t dLen = cobs_decode(_rawBuf, _rawIdx, _pBuf);
+                        size_t dLen = tinylink::codec::cobs_decode(_rawBuf, _rawIdx, _pBuf, sizeof(_pBuf));
 
                         if (dLen == PLAIN_SIZE) {
-                            uint16_t calc = fletcher16(_pBuf, PLAIN_SIZE - 2);
+                            uint16_t calc = tinylink::codec::fletcher16(_pBuf, PLAIN_SIZE - 2);
 
                             // Clear, explicit Fletcher-16 extraction
                             uint16_t recv =
@@ -292,11 +221,11 @@ namespace tinylink {
 
             memcpy(&_pBuf[3], &payload, sizeof(T));
 
-            uint16_t chk = fletcher16(_pBuf, PLAIN_SIZE - 2);
+            uint16_t chk = tinylink::codec::fletcher16(_pBuf, PLAIN_SIZE - 2);
             _pBuf[PLAIN_SIZE - 2] = chk & 0xFF;
             _pBuf[PLAIN_SIZE - 1] = (chk >> 8) & 0xFF;
 
-            size_t eLen = cobs_encode(_pBuf, PLAIN_SIZE, _rawBuf);
+            size_t eLen = tinylink::codec::cobs_encode(_pBuf, PLAIN_SIZE, _rawBuf, sizeof(_rawBuf));
 
             _hw->write(0x00);
             _hw->write(_rawBuf, eLen);
