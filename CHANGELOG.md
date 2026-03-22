@@ -23,9 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `src/protocol/MessageType.h`: focused header with `MessageType` enum, `message_type_from_wire()`, `message_type_to_wire()`, and `message_type_to_string()` helpers.
+- Compatibility unit tests: `test_message_type_legacy_req_maps_to_cmd` and `test_message_type_cmd_wire_byte_is_C`.
+- Migration guide in README for `MessageType::Req` → `MessageType::Cmd`.
 - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`, issue/PR templates, and `CITATION.cff` for OSS best practices.
 
 ### Changed
+- `MessageType::Req` (wire byte `'R'`) renamed to `MessageType::Cmd` (wire byte `'C'`). Parsers accept both `'R'` (legacy) and `'C'` (new) via `message_type_from_wire()`.
+- `src/TinyProtocol.h` now includes `src/protocol/MessageType.h` instead of defining the enum inline.
+- Examples updated to use `message_type_to_wire(MessageType::Cmd)`.
 - Payload size limit reduced from 240 bytes to 64 bytes to enforce micro-message design intent and eliminate a latent `_rawIdx` overflow bug on large payloads.
 
 ---

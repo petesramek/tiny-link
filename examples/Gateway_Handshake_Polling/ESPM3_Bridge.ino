@@ -19,7 +19,7 @@ void setup() {
     // 3. Signal to Tiny88 that we are stable and ready for data
     TinyLink<GatewayStatus, TinyArduinoAdapter> statusLink(adapter);
     GatewayStatus msg = { 1, 0 };
-    statusLink.send(TYPE_REQ, msg);
+    statusLink.send(message_type_to_wire(MessageType::Cmd), msg);
 }
 
 void loop() {
