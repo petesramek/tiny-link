@@ -80,7 +80,7 @@ void test_cobs_crc_failure(void) {
     }
 
     TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 /** 
@@ -109,7 +109,7 @@ void test_cobs_double_delimiter(void) {
     
     link.update();
     
-    TEST_ASSERT_EQUAL_UINT16(0, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().crc);
 }
 
 /** 
@@ -145,7 +145,7 @@ void test_timeout_cleanup(void) {
     adapter.advanceMillis(300); 
     link.update();
 
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().timeouts);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().timeout);
     
     TestPayload data = { 1, 1.0f };
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
@@ -167,7 +167,7 @@ void test_double_delimiter_resilience(void) {
     while(adapter.available() > 0) link.update();
     
     TEST_ASSERT_TRUE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(0, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().crc);
 }
 
 /**
@@ -180,7 +180,7 @@ void test_short_frame_rejection(void) {
     link.update();
     
     TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(0, link.getStats().crcErrs); 
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().crc); 
 }
 
 /**
@@ -338,7 +338,7 @@ void test_zero_length_header_rejection(void) {
     
     // dLen = 5. PLAIN_SIZE = 13.
     // 5 != 13 triggers the 'else { _stats.crcErrs++; }' in TinyLink.h
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 /** @test Verifies that packets larger than the compiled struct size are rejected */
@@ -350,7 +350,7 @@ void test_oversized_struct_protection(void) {
     link.update();
     
     TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 /** @test Verifies that a new 0x00 delimiter immediately kills any pending partial frame */
@@ -434,7 +434,7 @@ void test_cold_boot_sync(void) {
     link.update();
     
     // Should be silent, no errors
-    TEST_ASSERT_EQUAL_UINT16(0, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().crc);
     TEST_ASSERT_EQUAL_UINT8(0, link.available());
 }
 
@@ -459,7 +459,7 @@ void test_swapped_byte_detection(void) {
     
     while(adapter.available() > 0) link.update();
     TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 struct Small { uint8_t a; } __attribute__((packed));
@@ -478,7 +478,7 @@ void test_crosstalk_rejection(void) {
     
     // Large link should NOT have accepted the small packet due to PLAIN_SIZE mismatch
     TEST_ASSERT_FALSE(linkLarge.available());
-    TEST_ASSERT_EQUAL_UINT16(1, linkLarge.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, linkLarge.getStats().crc);
 }
 
 
@@ -493,7 +493,7 @@ void test_single_bit_flip_detection(void) {
     
     while(adapter.available() > 0) link.update();
     TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 /** @test Verifies that a zero at the final byte of the struct is preserved */
@@ -538,7 +538,7 @@ void test_ghost_zero_detection(void) {
     
     while(adapter.available() > 0) link.update();
     TEST_ASSERT_FALSE_MESSAGE(link.available(), "Ghost zero was not detected");
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 /** @test Verifies rejection of COBS frames with invalid internal code pointers */
@@ -589,7 +589,7 @@ void test_structural_size_mismatch(void) {
     while(adapter.available() > 0) link.update();
     
     TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 /** @test Verifies that the engine can handle packets with no inter-frame gap */
@@ -619,12 +619,12 @@ void test_timeout_precision(void) {
     // Wait exactly at the edge (249ms)
     adapter.advanceMillis(249);
     link.update();
-    TEST_ASSERT_EQUAL_UINT16(0, link.getStats().timeouts);
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().timeout);
     
     // Cross the edge (2ms later)
     adapter.advanceMillis(2);
     link.update();
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().timeouts);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().timeout);
 }
 
 /** @test Verifies that a 0x00 byte inside the payload is correctly handled by COBS */
@@ -647,8 +647,8 @@ void test_micro_frame_noise_suppression(void) {
     adapter.inject(noise, sizeof(noise));
     link.update();
     
-    TEST_ASSERT_EQUAL_UINT16(0, link.getStats().crcErrs);
-    TEST_ASSERT_EQUAL_UINT16(0, link.getStats().packets);
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().crc);
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().packets);
 }
 
 /** @test Verifies that multi-byte integers split across COBS blocks are reassembled correctly */
@@ -682,7 +682,7 @@ void test_endless_delimiter_resilience(void) {
     adapter.inject(zeros, 100);
     
     link.update();
-    TEST_ASSERT_EQUAL_UINT16(0, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().crc);
     TEST_ASSERT_EQUAL_UINT8(0, link.available());
 }
 
@@ -714,7 +714,7 @@ void test_endian_checksum_consistency(void) {
     
     // If the checksum was correctly packed/unpacked, swapping bytes MUST cause a CRC error.
     TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 /** @test Verifies that the state machine persists across fragmented single-byte arrivals */
@@ -821,7 +821,7 @@ void test_trailing_bit_integrity(void) {
     
     while(adapter.available() > 0) link.update();
     TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 /** @test Verifies Fletcher-16 mathematical correctness at the 255 modulo boundary */
@@ -922,7 +922,7 @@ void test_crc_endian_sensitivity(void) {
     // Swap last two bytes before 0x00
     std::swap(b[b.size()-2], b[b.size()-3]);
     while(adapter.available() > 0) link.update();
-    TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
 void register_protocol_tests(void) {

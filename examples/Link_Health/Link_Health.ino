@@ -20,10 +20,10 @@ void loop() {
         
         Serial.println("--- TinyLink Health Report ---");
         Serial.print("Success Packets: "); Serial.println(stats.packets);
-        Serial.print("CRC/COBS Errors: "); Serial.println(stats.crcErrs);
-        Serial.print("Timeouts:        "); Serial.println(stats.timeouts);
+        Serial.print("CRC/COBS Errors: "); Serial.println(stats.crc);
+        Serial.print("Timeouts:        "); Serial.println(stats.timeout);
         
-        if (stats.crcErrs > 10) {
+        if (stats.crc > 10) {
             Serial.println("WARNING: High interference detected!");
         }
         

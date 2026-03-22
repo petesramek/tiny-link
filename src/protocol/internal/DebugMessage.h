@@ -1,10 +1,13 @@
 /**
- * @file DebugMessage.h
+ * @file internal/DebugMessage.h
  * @brief DebugMessage — packed debug/diagnostic payload for MessageType::Debug ('g') frames.
+ *
+ * Internal header: not part of the public API surface. Users should not
+ * depend on the wire layout defined here.
  */
 
-#ifndef TINYLINK_DEBUGMESSAGE_H
-#define TINYLINK_DEBUGMESSAGE_H
+#ifndef TINYLINK_INTERNAL_DEBUGMESSAGE_H
+#define TINYLINK_INTERNAL_DEBUGMESSAGE_H
 
 #include <stdint.h>
 #include <string.h>
@@ -66,4 +69,4 @@ namespace tinylink {
 
 } // namespace tinylink
 
-#endif // TINYLINK_DEBUGMESSAGE_H
+#endif // TINYLINK_INTERNAL_DEBUGMESSAGE_H

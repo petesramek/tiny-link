@@ -1,13 +1,16 @@
 /**
- * @file AckMessage.h
+ * @file internal/AckMessage.h
  * @brief TinyAck — packed ACK/NACK payload carried in MessageType::Ack frames.
+ *
+ * Internal header: not part of the public API surface. Users should not
+ * depend on the wire layout defined here.
  */
 
-#ifndef TINYLINK_ACKMESSAGE_H
-#define TINYLINK_ACKMESSAGE_H
+#ifndef TINYLINK_INTERNAL_ACKMESSAGE_H
+#define TINYLINK_INTERNAL_ACKMESSAGE_H
 
 #include <stdint.h>
-#include "Status.h"
+#include "protocol/Status.h"
 
 namespace tinylink {
 
@@ -38,4 +41,4 @@ namespace tinylink {
 
 } // namespace tinylink
 
-#endif // TINYLINK_ACKMESSAGE_H
+#endif // TINYLINK_INTERNAL_ACKMESSAGE_H

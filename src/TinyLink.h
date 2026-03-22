@@ -84,7 +84,6 @@ namespace tinylink {
         T _data;
 
         TinyStats _stats = TinyStats{};
-        uint16_t _overflowErrs = 0;  // NEW
 
         ReceiverCallback _onReceive = nullptr;
 
@@ -115,7 +114,7 @@ namespace tinylink {
 
         void onReceive(ReceiverCallback cb) { _onReceive = cb; }
         void setTimeout(unsigned long ms) { _timeout = ms; }
-        void clearStats() { memset(&_stats, 0, sizeof(TinyStats)); }
+        void clearStats() { _stats.clear(); }
 
         bool connected() { return _hw->isOpen(); }
         const TinyStats& getStats() { return _stats; }
@@ -127,7 +126,7 @@ namespace tinylink {
         uint8_t type() { return _currType; }
         uint8_t seq() { return _currSeq; }
 
-        uint16_t overflowErrors() const { return _overflowErrs; }
+        uint16_t overflowErrors() const { return static_cast<uint16_t>(_stats.overflow); }
 
 
         // -------------------------------------------------------------------------
@@ -139,7 +138,7 @@ namespace tinylink {
 
             if (_rawIdx > 0 && (_hw->millis() - _lastByte > _timeout)) {
                 _rawIdx = 0;
-                _stats.timeouts++;
+                _stats.increment(TinyStatus::ERR_TIMEOUT);
             }
 
             while (_hw->available() > 0) {
@@ -163,12 +162,12 @@ namespace tinylink {
                             if (payloadLen == sizeof(T)) {
                                 _currType = rtype;
                                 _currSeq = rseq;
-                                _stats.packets++;
+                                _stats.increment(TinyStatus::STATUS_OK);
                                 _rawIdx = 0;
                                 if (_onReceive) { _onReceive(_data); } else { _hasNew = true; }
                                 return;
                             } else {
-                                _stats.crcErrs++;
+                                _stats.increment(TinyStatus::ERR_CRC);
                             }
                         }
                     }
@@ -184,7 +183,7 @@ namespace tinylink {
                         _rawBuf[_rawIdx++] = c;
                     }
                     else {
-                        _overflowErrs++;
+                        _stats.increment(TinyStatus::ERR_OVERFLOW);
                         _rawIdx = 0;
                     }
                 }
@@ -200,7 +199,7 @@ namespace tinylink {
 
             _currSeq = _nextSeq++;
             size_t plainLen = tinylink::packet::pack(type, _currSeq, (const uint8_t*)&payload, sizeof(T), _pBuf, sizeof(_pBuf));
-            if (plainLen == 0) { _stats.crcErrs++; return; }
+            if (plainLen == 0) { _stats.increment(TinyStatus::ERR_CRC); return; }
             size_t eLen = tinylink::codec::cobs_encode(_pBuf, plainLen, _rawBuf, sizeof(_rawBuf));
 
             _hw->write(0x00);
