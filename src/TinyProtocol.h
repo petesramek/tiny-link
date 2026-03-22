@@ -8,24 +8,9 @@
 
 #include <stdint.h>
 
+#include "protocol/MessageType.h"
+
 namespace tinylink {
-
-    // ------------------------------------------------------------
-    // Message Types (Wire Format)
-    // ------------------------------------------------------------
-
-    /**
-     * @brief Message type identifiers used in TinyLink frames.
-     *
-     * These are 1‑byte ASCII codes placed in pBuf[0].
-     * Using enum class ensures type safety while allowing easy casting.
-     */
-    enum class MessageType : uint8_t {
-        Data = 'D',   /**< Standard data payload */
-        Debug = 'g',   /**< Debugging / Logging information */
-        Req = 'R',   /**< Request for data / action */
-        Done = 'K'    /**< Acknowledgment of completion */
-    };
 
     // ------------------------------------------------------------
     // High-Level Status Codes

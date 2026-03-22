@@ -163,11 +163,32 @@ Serial.print("Timeouts: "); Serial.println(stats.timeouts);
 
 `src/`: Core protocol logic (`TinyLink.h`, `TinyProtocol.h`).
 
+`src/protocol/`: Focused protocol headers (`MessageType.h`, etc.).
+
 `src/adapters/`: Hardware-specific drivers (Arduino, Posix, Windows, etc.).
 
 `examples/`: Ready-to-run duplex, callback, and health-monitoring demos.
 
 `test/`: Native C++ unit tests using `TinyTestAdapter`.
+
+## 🔄 Migration: `MessageType::Req` → `MessageType::Cmd`
+
+`MessageType::Req` (wire byte `'R'`) has been renamed to `MessageType::Cmd` (wire byte `'C'`).
+New code should use `MessageType::Cmd` or the helper `message_type_to_wire(MessageType::Cmd)`.
+
+Parsers automatically accept both `'R'` and `'C'` via `message_type_from_wire()` for backward
+compatibility with older firmware.
+
+```cpp
+// New outgoing frames (prefer this):
+link.send(message_type_to_wire(MessageType::Cmd), msg);   // emits 'C'
+
+// Parsing accepts both legacy 'R' and new 'C':
+MessageType mt;
+if (message_type_from_wire(link.type(), mt) && mt == MessageType::Cmd) {
+    // handles frames from old ('R') and new ('C') senders
+}
+```
 
 ## 📜 License
 This project is licensed under the MIT License.

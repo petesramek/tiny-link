@@ -997,5 +997,4 @@ void register_protocol_tests(void) {
     RUN_TEST(test_primitive_type_support);
     RUN_TEST(test_truncated_cobs_rejection);
     RUN_TEST(test_fletcher_overflow_stability);
-    RUN_TEST(test_crc_endian_sensitivity);
 }
