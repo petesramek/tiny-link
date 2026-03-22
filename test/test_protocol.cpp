@@ -923,7 +923,7 @@ void test_crc_endian_sensitivity(void) {
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
 
-int register_protocol_tests(int argc, char** argv) {
+void register_protocol_tests(void) {
     UNITY_BEGIN();
 
     // --- Core Protocol & Asynchronous Events ---
