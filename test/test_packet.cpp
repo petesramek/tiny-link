@@ -50,7 +50,7 @@ void test_packet_length_mismatch(void) {
     TEST_ASSERT_EQUAL_UINT32(0, pLen);
 }
 
-int main(void) {
+static int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_packet_roundtrip);
     RUN_TEST(test_packet_bad_checksum);

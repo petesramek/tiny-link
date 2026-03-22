@@ -34,8 +34,8 @@ static void encode_decode_roundtrip(const uint8_t* payload, size_t len) {
 // ---------------------------------------------------------------------------
 // setUp / tearDown (required by Unity)
 // ---------------------------------------------------------------------------
-void setUp(void) {}
-void tearDown(void) {}
+static void setUp(void) {}
+static void tearDown(void) {}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -175,7 +175,7 @@ void test_cobs_native_stress(void) {
 // ---------------------------------------------------------------------------
 // Test runner
 // ---------------------------------------------------------------------------
-int main(void) {
+static int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_cobs_roundtrip_small);

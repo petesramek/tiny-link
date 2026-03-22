@@ -41,7 +41,7 @@ LoopbackAdapter adapter;
 tinylink::TinyLink<TestPayload, LoopbackAdapter> link(adapter);
 
 /** @brief Reset the state machine and virtual clock before every test case */
-void setUp(void) {
+static void setUp(void) {
     link.flush();
     link.clearStats();
     link.onReceive(nullptr);
@@ -51,7 +51,7 @@ void setUp(void) {
 }
 
 /** @brief Reset state after every test case */
-void tearDown(void) {
+static void tearDown(void) {
     // No specific teardown required for this suite
 }
 
@@ -966,7 +966,7 @@ void test_crc_endian_sensitivity(void) {
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
 
-int main(int argc, char** argv) {
+static int main(int argc, char** argv) {
     UNITY_BEGIN();
 
     // --- Core Protocol & Asynchronous Events ---

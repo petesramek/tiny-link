@@ -17,8 +17,8 @@ using namespace tinylink::codec;
 // ---------------------------------------------------------------------------
 // setUp / tearDown (required by Unity)
 // ---------------------------------------------------------------------------
-void setUp(void) {}
-void tearDown(void) {}
+static void setUp(void) {}
+static void tearDown(void) {}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -126,7 +126,7 @@ void test_fletcher16_native_stress(void) {
 // ---------------------------------------------------------------------------
 // Test runner
 // ---------------------------------------------------------------------------
-int main(void) {
+static int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_fletcher16_zero_length);
