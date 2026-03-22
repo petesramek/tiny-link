@@ -9,9 +9,7 @@ void register_protocol_tests(void);
 void register_callback_tests(void);
 void register_stats_tests(void);
 void register_ackmessage_tests(void);
-void register_ackmessage_more_tests(void);
 void register_debugmessage_tests(void);
-void register_debugmessage_edge_tests(void);
 void register_message_type_tests(void);
 void register_status_tests(void);
 
