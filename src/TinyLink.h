@@ -11,6 +11,8 @@
 #include "Fletcher16.h"
 #include "Packet.h"
 #include "version.h"
+#include "protocol/internal/AckMessage.h"
+#include "protocol/internal/HandshakeMessage.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -102,6 +104,72 @@ namespace tinylink {
         unsigned long _lastByte = 0;
         unsigned long _timeout = 250;
 
+        TinyState _state = TinyState::WAIT_FOR_SYNC;
+
+        // -------------------------------------------------------------------------
+        // Internal Sender
+        // -------------------------------------------------------------------------
+        // Packs, COBS-encodes and writes a frame without touching public sequencing
+        // (_nextSeq / _currSeq) or stats when internal=true.
+        // Returns true if the frame was handed off to the hardware layer.
+        bool send_internal(uint8_t wireType, uint8_t seq, const uint8_t *payload, size_t len, bool internal) {
+            if (!_hw->isOpen()) return false;
+
+            // Use a local buffer sized for the largest internal payload (TinyAck = 2 bytes).
+            // Plain packet layout: [type(1)][seq(1)][len(1)][payload][crc_lo(1)][crc_hi(1)]
+            // COBS worst-case overhead: ceil(n/254)+1 extra bytes. For n=7: 2 bytes max.
+            // +4 is a conservative upper bound that keeps the buffer safely oversized.
+            const size_t MAX_INTERNAL_PLAIN = 3 + sizeof(TinyAck) + 2; // 7 bytes
+            const size_t MAX_INTERNAL_ENC   = MAX_INTERNAL_PLAIN + 4;  // 11 bytes (conservative COBS upper bound)
+            uint8_t pBuf[MAX_INTERNAL_PLAIN];
+            uint8_t rawBuf[MAX_INTERNAL_ENC];
+
+            size_t plainLen = tinylink::packet::pack(wireType, seq, payload, len, pBuf, MAX_INTERNAL_PLAIN);
+            if (plainLen == 0) {
+                if (!internal) _stats.increment(TinyStatus::ERR_CRC);
+                return false;
+            }
+            size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen, rawBuf, MAX_INTERNAL_ENC);
+
+            _hw->write(0x00);
+            _hw->write(rawBuf, eLen);
+            _hw->write(0x00);
+
+            _rawIdx = 0;
+            return true;
+        }
+
+        // -------------------------------------------------------------------------
+        // Handshake Helpers
+        // -------------------------------------------------------------------------
+
+        // Send a Handshake frame and transition to CONNECTING state.
+        void startHandshake() {
+            HandshakeMessage m;
+            m.version = 0;
+            send_internal(message_type_to_wire(MessageType::Handshake),
+                          0, reinterpret_cast<const uint8_t*>(&m), sizeof(m), true);
+            _state = TinyState::CONNECTING;
+        }
+
+        // Handle an incoming Handshake frame: transition state and reply with a TinyAck.
+        void handleHandshakeMessage(const uint8_t *payload, size_t len) {
+            if (len < sizeof(HandshakeMessage)) return;
+
+            HandshakeMessage h;
+            memcpy(&h, payload, sizeof(h));
+
+            if (_state != TinyState::WAIT_FOR_SYNC) {
+                _state = TinyState::HANDSHAKING;
+            }
+
+            TinyAck ack;
+            ack.seq    = 0;
+            ack.result = TinyStatus::STATUS_OK;
+            send_internal(message_type_to_wire(MessageType::Ack),
+                          0, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack), true);
+        }
+
     public:
 
         // -------------------------------------------------------------------------
@@ -155,6 +223,46 @@ namespace tinylink {
                 if (c == 0x00) {
                     if (_rawIdx >= 5) {
                         size_t dLen = tinylink::codec::cobs_decode(_rawBuf, _rawIdx, _pBuf, sizeof(_pBuf));
+
+                        // ---------------------------------------------------------
+                        // Internal dispatch: Handshake and handshake-confirmation ACK
+                        // These frames are consumed before the public handler so they
+                        // do not affect public stats or the user-visible data stream.
+                        // ---------------------------------------------------------
+                        if (dLen >= 6) {
+                            uint8_t wireType = _pBuf[0];
+
+                            // Handshake frame: handle internally and reply with ACK.
+                            if (wireType == message_type_to_wire(MessageType::Handshake)) {
+                                uint8_t hsBuf[sizeof(HandshakeMessage)];
+                                uint8_t rtype = 0, rseq = 0;
+                                size_t hsLen = tinylink::packet::unpack(_pBuf, dLen, &rtype, &rseq,
+                                                                        hsBuf, sizeof(hsBuf));
+                                if (hsLen == sizeof(HandshakeMessage)) {
+                                    handleHandshakeMessage(hsBuf, hsLen);
+                                }
+                                _rawIdx = 0;
+                                continue;
+                            }
+
+                            // Handshake-confirmation ACK: consume if we are in CONNECTING state.
+                            if (wireType == message_type_to_wire(MessageType::Ack)
+                                    && _state == TinyState::CONNECTING) {
+                                uint8_t ackBuf[sizeof(TinyAck)];
+                                uint8_t rtype = 0, rseq = 0;
+                                size_t ackLen = tinylink::packet::unpack(_pBuf, dLen, &rtype, &rseq,
+                                                                         ackBuf, sizeof(ackBuf));
+                                if (ackLen == sizeof(TinyAck)) {
+                                    TinyAck ack;
+                                    memcpy(&ack, ackBuf, sizeof(ack));
+                                    if (ack.result == TinyStatus::STATUS_OK) {
+                                        _state = TinyState::WAIT_FOR_SYNC;
+                                        _rawIdx = 0;
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
 
                         {
                             uint8_t rtype = 0, rseq = 0;

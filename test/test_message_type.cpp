@@ -49,6 +49,14 @@ void test_mt_from_wire_done(void) {
                             static_cast<uint8_t>(out));
 }
 
+/** @test message_type_from_wire accepts 'H' as MessageType::Handshake. */
+void test_mt_from_wire_handshake(void) {
+    MessageType out;
+    TEST_ASSERT_TRUE(message_type_from_wire('H', out));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MessageType::Handshake),
+                            static_cast<uint8_t>(out));
+}
+
 /** @test Legacy 'R' is rejected (breaking change). */
 void test_mt_from_wire_legacy_r_rejected(void) {
     MessageType out;
@@ -70,15 +78,17 @@ void test_mt_to_wire(void) {
     TEST_ASSERT_EQUAL_HEX8('C', message_type_to_wire(MessageType::Cmd));
     TEST_ASSERT_EQUAL_HEX8('A', message_type_to_wire(MessageType::Ack));
     TEST_ASSERT_EQUAL_HEX8('K', message_type_to_wire(MessageType::Done));
+    TEST_ASSERT_EQUAL_HEX8('H', message_type_to_wire(MessageType::Handshake));
 }
 
 /** @test message_type_to_string returns expected label strings. */
 void test_mt_to_string(void) {
-    TEST_ASSERT_EQUAL_STRING("Data",    message_type_to_string(MessageType::Data));
-    TEST_ASSERT_EQUAL_STRING("Debug",   message_type_to_string(MessageType::Debug));
-    TEST_ASSERT_EQUAL_STRING("Cmd",     message_type_to_string(MessageType::Cmd));
-    TEST_ASSERT_EQUAL_STRING("Ack",     message_type_to_string(MessageType::Ack));
-    TEST_ASSERT_EQUAL_STRING("Done",    message_type_to_string(MessageType::Done));
+    TEST_ASSERT_EQUAL_STRING("Data",      message_type_to_string(MessageType::Data));
+    TEST_ASSERT_EQUAL_STRING("Debug",     message_type_to_string(MessageType::Debug));
+    TEST_ASSERT_EQUAL_STRING("Cmd",       message_type_to_string(MessageType::Cmd));
+    TEST_ASSERT_EQUAL_STRING("Ack",       message_type_to_string(MessageType::Ack));
+    TEST_ASSERT_EQUAL_STRING("Done",      message_type_to_string(MessageType::Done));
+    TEST_ASSERT_EQUAL_STRING("Handshake", message_type_to_string(MessageType::Handshake));
 }
 
 /** @test message_type_to_wire / from_wire round-trip for all defined types. */
@@ -88,7 +98,8 @@ void test_mt_roundtrip(void) {
         MessageType::Debug,
         MessageType::Cmd,
         MessageType::Ack,
-        MessageType::Done
+        MessageType::Done,
+        MessageType::Handshake
     };
     for (size_t i = 0; i < sizeof(types)/sizeof(types[0]); ++i) {
         uint8_t wire = message_type_to_wire(types[i]);
@@ -105,6 +116,7 @@ void register_message_type_tests(void) {
     RUN_TEST(test_mt_from_wire_cmd);
     RUN_TEST(test_mt_from_wire_ack);
     RUN_TEST(test_mt_from_wire_done);
+    RUN_TEST(test_mt_from_wire_handshake);
     RUN_TEST(test_mt_from_wire_legacy_r_rejected);
     RUN_TEST(test_mt_from_wire_unknown);
     RUN_TEST(test_mt_to_wire);
