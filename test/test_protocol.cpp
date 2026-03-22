@@ -744,17 +744,25 @@ void test_signed_boundary_integrity(void) {
 
 /** @test Verifies that changing the callback during an active reception is safe */
 void test_callback_hotswap_safety(void) {
+    static bool hotswapCalled;
+    hotswapCalled = false;
+
     uint8_t start[] = { 0x00, 0x05, 0x01 };
     adapter.inject(start, sizeof(start));
     link.update();
-    
-    link.onReceive([](const TestPayload& d){ /* New Handler */ });
-    
+
+    link.onReceive([](const TestPayload& d){ hotswapCalled = true; });
+
     // Complete the packet
     TestPayload data = {1, 1.0f};
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     while(adapter.available() > 0) link.update();
-    TEST_ASSERT_TRUE(link.available());
+
+    // In callback mode _hasNew is NOT set; the callback is invoked directly.
+    TEST_ASSERT_FALSE_MESSAGE(link.available(),
+        "available() must be false in callback mode — use the callback to receive data");
+    TEST_ASSERT_TRUE_MESSAGE(hotswapCalled,
+        "Hotswapped callback must be invoked for the received frame");
 }
 
 /** @test Verifies that the checksum for one packet doesn't affect the next calculation */

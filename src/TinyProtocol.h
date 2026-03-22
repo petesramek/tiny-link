@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file TinyProtocol.h
  * @brief Core constants, enums, and telemetry structures for TinyLink.
  */

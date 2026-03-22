@@ -79,10 +79,15 @@ tinylink::TinyLink<MyData, tinylink::TinyPosixAdapter> link(adapter);
 **Option A: Callback Style (Recommended)**
 
 Best for clean, event-driven code. The handler triggers automatically inside `update()`.
+The engine invokes the callback immediately upon receiving each valid frame and then
+**continues processing** subsequent bytes and frames without any manual intervention.
+No call to `flush()` or `available()` is needed — the engine remains fully operational
+after every callback invocation.
 
 ```cpp
 void onReceive(const MyData& data) {
     Serial.println(data.temperature);
+    // No flush() required — update() automatically continues after this returns.
 }
 
 void setup() {
@@ -90,7 +95,7 @@ void setup() {
 }
 
 void loop() {
-    link.update(); // Engine handles the callback
+    link.update(); // Each valid frame triggers onReceive(); subsequent frames keep coming.
 }
 ```
 

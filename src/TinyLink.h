@@ -163,10 +163,13 @@ namespace tinylink {
                             if (payloadLen == sizeof(T)) {
                                 _currType = rtype;
                                 _currSeq = rseq;
-                                _hasNew = true;
                                 _stats.packets++;
                                 _rawIdx = 0;
-                                if (_onReceive) _onReceive(_data);
+                                if (_onReceive) {
+                                    _onReceive(_data);
+                                } else {
+                                    _hasNew = true;
+                                }
                                 return;
                             } else {
                                 _stats.crcErrs++;

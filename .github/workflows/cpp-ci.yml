@@ -20,6 +20,42 @@ jobs:
       - name: Run Native Unit Tests
         run: pio test -e native
 
+  test_native_gcc:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Fetch Unity test framework
+        run: |
+          mkdir -p /tmp/unity
+          wget -q https://raw.githubusercontent.com/ThrowTheSwitch/Unity/v2.6.0/src/unity.c -O /tmp/unity/unity.c
+          wget -q https://raw.githubusercontent.com/ThrowTheSwitch/Unity/v2.6.0/src/unity.h -O /tmp/unity/unity.h
+          wget -q https://raw.githubusercontent.com/ThrowTheSwitch/Unity/v2.6.0/src/unity_internals.h -O /tmp/unity/unity_internals.h
+
+      - name: Build and run native tests (g++)
+        run: |
+          g++ -std=c++14 \
+            -DTINYLINK_NATIVE_TEST \
+            -Isrc \
+            -Itest \
+            -I/tmp/unity \
+            src/CobsCodec.cpp \
+            src/Fletcher16.cpp \
+            src/Packet.cpp \
+            test/globals.cpp \
+            test/test_runner.cpp \
+            test/test_cobs.cpp \
+            test/test_fletcher16.cpp \
+            test/test_packet.cpp \
+            test/test_protocol.cpp \
+            test/test_callback.cpp \
+            /tmp/unity/unity.c \
+            -o /tmp/test_runner
+          /tmp/test_runner
+
   compile_check:
     runs-on: ubuntu-latest
     steps:
