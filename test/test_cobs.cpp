@@ -80,7 +80,7 @@ void test_cobs_roundtrip_long_nonzero_run(void) {
     // 300 non-zero bytes forces at least two 0xFF-capped COBS overhead blocks.
     static uint8_t payload[300];
     for (size_t i = 0; i < sizeof(payload); i++)
-        payload[i] = (uint8_t)(i + 1 ? (i + 1) : 1);  // 1-255 cycling, never 0
+        payload[i] = (uint8_t)((i % 255) + 1);  // Cycles through 1-255, never 0
 
     static uint8_t enc[400];
     static uint8_t dec[300];
