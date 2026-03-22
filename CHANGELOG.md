@@ -23,15 +23,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `src/protocol/MessageType.h`: focused header with `MessageType` enum, `message_type_from_wire()`, `message_type_to_wire()`, and `message_type_to_string()` helpers.
-- Migration guide in README for `MessageType::Req` → `MessageType::Cmd`.
-- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`, issue/PR templates, and `CITATION.cff` for OSS best practices.
+- `src/protocol/Status.h`: focused header with expanded `TinyStatus` enum (STATUS_OK, ERR_CRC,
+  ERR_TIMEOUT, ERR_OVERFLOW, ERR_BUSY, ERR_PROCESSING, ERR_UNKNOWN) and `tinystatus_to_string()` helper.
+- `src/protocol/State.h`: focused header with expanded `TinyState` enum (CONNECTING, HANDSHAKING,
+  WAIT_FOR_SYNC, IN_FRAME, FRAME_COMPLETE, AWAITING_ACK).
+- `src/protocol/Stats.h`: focused header with `TinyStats` struct (extracted from `TinyProtocol.h`),
+  plus a new `clear()` method.
+- `src/protocol/AckMessage.h`: packed `TinyAck` struct (`uint8_t seq` + `TinyStatus result`,
+  2 bytes) for `MessageType::Ack` (`'A'`) frames.
+- `src/protocol/DebugMessage.h`: packed `DebugMessage` struct (32 bytes: `uint32_t ts`,
+  `uint8_t level`, `char text[27]`) for `MessageType::Debug` (`'g'`) frames, with
+  `debugmessage_set_text()` helper and `DEBUG_TEXT_CAPACITY` constant.
+- `MessageType::Ack = 'A'` added to `src/protocol/MessageType.h`.
+- `src/protocol/MessageType.h`: focused header with `MessageType` enum, `message_type_from_wire()`,
+  `message_type_to_wire()`, and `message_type_to_string()` helpers.
+- Migration guide in README for all breaking changes in this release.
+- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`, issue/PR templates,
+  and `CITATION.cff` for OSS best practices.
+- Unity-style unit tests: `test_stats`, `test_ackmessage`, `test_ackmessage_more`,
+  `test_debugmessage`, `test_debugmessage_edgecases`, `test_message_type`, `test_status_strings`.
+  All registered in `test/test_runner.cpp`.
 
 ### Changed
-- `MessageType::Req` (wire byte `'R'`) renamed to `MessageType::Cmd` (wire byte `'C'`). Parsers accept both `'R'` (legacy) and `'C'` (new) via `message_type_from_wire()`.
-- `src/TinyProtocol.h` now includes `src/protocol/MessageType.h` instead of defining the enum inline.
+- `src/TinyProtocol.h` is now a lightweight umbrella header that re-exports all focused
+  `src/protocol/*.h` headers. Existing `#include "TinyProtocol.h"` continues to work unchanged.
+- `TinyStatus` expanded with granular ACK codes (ERR_OVERFLOW, ERR_BUSY, ERR_PROCESSING,
+  ERR_UNKNOWN) and moved to `src/protocol/Status.h`.  Wire values for ERR_CRC (0x01) and
+  ERR_TIMEOUT (0x02) are now explicitly assigned.
+- `TinyState` expanded with CONNECTING, HANDSHAKING, FRAME_COMPLETE, AWAITING_ACK states and
+  moved to `src/protocol/State.h`.
+- `TinyStats` moved to `src/protocol/Stats.h`; gained `clear()` method.
 - Examples updated to use `message_type_to_wire(MessageType::Cmd)`.
-- Payload size limit reduced from 240 bytes to 64 bytes to enforce micro-message design intent and eliminate a latent `_rawIdx` overflow bug on large payloads.
+- Payload size limit reduced from 240 bytes to 64 bytes to enforce micro-message design intent
+  and eliminate a latent `_rawIdx` overflow bug on large payloads.
+
+### Removed
+- **[Breaking]** `MessageType::Req` (wire byte `'R'`) removed; replaced by `MessageType::Cmd`
+  (wire byte `'C'`).  The legacy `'R'` mapping in `message_type_from_wire()` has been dropped —
+  peers must use `'C'` for command frames going forward.
+- **[Breaking]** `TinyResult` enum removed; replaced by the unified `TinyStatus` enum in
+  `src/protocol/Status.h`.  `Result.h` has been superseded by `AckMessage.h`.
 
 ---
 
