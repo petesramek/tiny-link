@@ -747,14 +747,16 @@ void test_callback_hotswap_safety(void) {
     uint8_t start[] = { 0x00, 0x05, 0x01 };
     adapter.inject(start, sizeof(start));
     link.update();
-    
-    link.onReceive([](const TestPayload& d){ /* New Handler */ });
-    
+
+    static bool hotswapFired;
+    hotswapFired = false;
+    link.onReceive([](const TestPayload&){ hotswapFired = true; });
+
     // Complete the packet
     TestPayload data = {1, 1.0f};
     link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     while(adapter.available() > 0) link.update();
-    TEST_ASSERT_TRUE(link.available());
+    TEST_ASSERT_TRUE_MESSAGE(hotswapFired, "Hot-swapped callback was not invoked");
 }
 
 /** @test Verifies that the checksum for one packet doesn't affect the next calculation */
