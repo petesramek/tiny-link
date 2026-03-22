@@ -7,6 +7,13 @@ void register_cobs_tests(void);
 void register_packet_tests(void);
 void register_protocol_tests(void);
 void register_callback_tests(void);
+void register_stats_tests(void);
+void register_ackmessage_tests(void);
+void register_ackmessage_more_tests(void);
+void register_debugmessage_tests(void);
+void register_debugmessage_edge_tests(void);
+void register_message_type_tests(void);
+void register_status_tests(void);
 
 /** @brief Reset the state machine and virtual clock before every test case */
 void setUp(void) {
@@ -33,6 +40,13 @@ int main(int argc, char** argv) {
     register_packet_tests();
     register_protocol_tests();
     register_callback_tests();
+    register_stats_tests();
+    register_ackmessage_tests();
+    register_ackmessage_more_tests();
+    register_debugmessage_tests();
+    register_debugmessage_edge_tests();
+    register_message_type_tests();
+    register_status_tests();
 
     return UNITY_END();
 }

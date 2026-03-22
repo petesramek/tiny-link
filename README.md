@@ -163,7 +163,7 @@ Serial.print("Timeouts: "); Serial.println(stats.timeouts);
 
 `src/`: Core protocol logic (`TinyLink.h`, `TinyProtocol.h`).
 
-`src/protocol/`: Focused protocol headers (`MessageType.h`, etc.).
+`src/protocol/`: Focused protocol headers (`MessageType.h`, `Status.h`, `State.h`, `Stats.h`, `AckMessage.h`, `DebugMessage.h`).
 
 `src/adapters/`: Hardware-specific drivers (Arduino, Posix, Windows, etc.).
 
@@ -171,23 +171,69 @@ Serial.print("Timeouts: "); Serial.println(stats.timeouts);
 
 `test/`: Native C++ unit tests using `TinyTestAdapter`.
 
-## 🔄 Migration: `MessageType::Req` → `MessageType::Cmd`
+## 🔄 Migration Guide
 
-`MessageType::Req` (wire byte `'R'`) has been renamed to `MessageType::Cmd` (wire byte `'C'`).
-New code should use `MessageType::Cmd` or the helper `message_type_to_wire(MessageType::Cmd)`.
+### `MessageType::Req` → `MessageType::Cmd` (wire `'R'` → `'C'`) — **Breaking Change**
 
-Parsers automatically accept both `'R'` and `'C'` via `message_type_from_wire()` for backward
-compatibility with older firmware.
+`MessageType::Req` (wire byte `'R'`) has been removed and replaced with `MessageType::Cmd`
+(wire byte `'C'`). Legacy `'R'` bytes are **no longer accepted** by the parser.
+
+**Action required**: Update all peers to send `'C'` for command frames.
 
 ```cpp
-// New outgoing frames (prefer this):
+// Outgoing command frames:
 link.send(message_type_to_wire(MessageType::Cmd), msg);   // emits 'C'
 
-// Parsing accepts both legacy 'R' and new 'C':
+// Parsing — only 'C' is accepted:
 MessageType mt;
 if (message_type_from_wire(link.type(), mt) && mt == MessageType::Cmd) {
-    // handles frames from old ('R') and new ('C') senders
+    // handle command
 }
+```
+
+### `MessageType::Ack` added (wire `'A'`)
+
+ACK/NACK frames now use `MessageType::Ack` (`'A'`) carrying a `TinyAck` payload:
+
+```cpp
+// TinyAck payload: 2 bytes — seq (uint8_t) + result (TinyStatus)
+tinylink::TinyAck ack;
+ack.seq    = link.seq();
+ack.result = tinylink::TinyStatus::STATUS_OK;
+link.send(message_type_to_wire(tinylink::MessageType::Ack), ack);
+```
+
+### `TinyStatus` — consolidated ACK/error codes
+
+`TinyStatus` now carries granular ACK codes (previously spread across a separate
+`TinyResult` type, which has been removed):
+
+| Value | Code | Meaning |
+|-------|------|---------|
+| `0x00` | `STATUS_OK` | No error; operation succeeded |
+| `0x01` | `ERR_CRC` | Checksum or framing failure |
+| `0x02` | `ERR_TIMEOUT` | Inter-byte timeout |
+| `0x03` | `ERR_OVERFLOW` | Receive buffer overflow |
+| `0x04` | `ERR_BUSY` | Peer is busy; retry later |
+| `0x05` | `ERR_PROCESSING` | Peer is still processing a prior command |
+| `0xFF` | `ERR_UNKNOWN` | Unspecified error |
+
+Use `tinystatus_to_string()` for human-readable diagnostics:
+
+```cpp
+#include "protocol/Status.h"
+const char* msg = tinylink::tinystatus_to_string(tinylink::TinyStatus::ERR_CRC);
+```
+
+### `DebugMessage` — structured debug payload (`MessageType::Debug` / `'g'`)
+
+```cpp
+#include "protocol/DebugMessage.h"
+tinylink::DebugMessage dbg;
+dbg.ts    = millis();
+dbg.level = 1;
+tinylink::debugmessage_set_text(dbg, "boot complete");
+link.send(message_type_to_wire(tinylink::MessageType::Debug), dbg);
 ```
 
 ## 📜 License

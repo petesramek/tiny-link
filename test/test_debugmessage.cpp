@@ -1,0 +1,79 @@
+/**
+ * @file test_debugmessage.cpp
+ * @brief Unit tests for DebugMessage (DebugMessage.h).
+ */
+
+#include <unity.h>
+#include <string.h>
+#include "protocol/DebugMessage.h"
+
+using namespace tinylink;
+
+/** @test sizeof(DebugMessage) == 32. */
+void test_debugmessage_size(void) {
+    TEST_ASSERT_EQUAL_size_t(32, sizeof(DebugMessage));
+}
+
+/** @test Fields are stored and retrieved correctly. */
+void test_debugmessage_fields(void) {
+    DebugMessage msg;
+    msg.ts    = 123456;
+    msg.level = 2;
+    debugmessage_set_text(msg, "hello");
+
+    TEST_ASSERT_EQUAL_UINT32(123456, msg.ts);
+    TEST_ASSERT_EQUAL_UINT8(2, msg.level);
+    TEST_ASSERT_EQUAL_STRING("hello", msg.text);
+}
+
+/** @test debugmessage_set_text copies up to DEBUG_TEXT_CAPACITY-1 chars. */
+void test_debugmessage_set_text_normal(void) {
+    DebugMessage msg;
+    debugmessage_set_text(msg, "test string");
+    TEST_ASSERT_EQUAL_STRING("test string", msg.text);
+}
+
+/** @test debugmessage_set_text truncates strings longer than capacity. */
+void test_debugmessage_set_text_truncate(void) {
+    DebugMessage msg;
+    // 30 chars — longer than DEBUG_TEXT_CAPACITY (27)
+    debugmessage_set_text(msg, "abcdefghijklmnopqrstuvwxyz1234");
+    // Should be truncated to DEBUG_TEXT_CAPACITY - 1 = 26 chars
+    TEST_ASSERT_EQUAL_size_t(DEBUG_TEXT_CAPACITY - 1, strlen(msg.text));
+    TEST_ASSERT_EQUAL_UINT8('\0', (uint8_t)msg.text[DEBUG_TEXT_CAPACITY - 1]);
+}
+
+/** @test debugmessage_set_text handles NULL source gracefully. */
+void test_debugmessage_set_text_null(void) {
+    DebugMessage msg;
+    msg.text[0] = 'X';  // pre-fill
+    debugmessage_set_text(msg, NULL);
+    TEST_ASSERT_EQUAL_UINT8('\0', (uint8_t)msg.text[0]);
+}
+
+/** @test Round-trip via memcpy preserves all fields. */
+void test_debugmessage_memcpy_roundtrip(void) {
+    DebugMessage original;
+    original.ts    = 9999;
+    original.level = 1;
+    debugmessage_set_text(original, "ping");
+
+    uint8_t buf[32];
+    memcpy(buf, &original, sizeof(original));
+
+    DebugMessage restored;
+    memcpy(&restored, buf, sizeof(restored));
+
+    TEST_ASSERT_EQUAL_UINT32(9999, restored.ts);
+    TEST_ASSERT_EQUAL_UINT8(1, restored.level);
+    TEST_ASSERT_EQUAL_STRING("ping", restored.text);
+}
+
+void register_debugmessage_tests(void) {
+    RUN_TEST(test_debugmessage_size);
+    RUN_TEST(test_debugmessage_fields);
+    RUN_TEST(test_debugmessage_set_text_normal);
+    RUN_TEST(test_debugmessage_set_text_truncate);
+    RUN_TEST(test_debugmessage_set_text_null);
+    RUN_TEST(test_debugmessage_memcpy_roundtrip);
+}
