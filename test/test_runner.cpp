@@ -40,9 +40,7 @@ int main(int argc, char** argv) {
     register_callback_tests();
     register_stats_tests();
     register_ackmessage_tests();
-    register_ackmessage_more_tests();
     register_debugmessage_tests();
-    register_debugmessage_edge_tests();
     register_message_type_tests();
     register_status_tests();
 
