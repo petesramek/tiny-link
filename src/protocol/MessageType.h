@@ -21,7 +21,6 @@ namespace tinylink {
             case static_cast<uint8_t>(MessageType::Data):  out = MessageType::Data;  return true;
             case static_cast<uint8_t>(MessageType::Debug): out = MessageType::Debug; return true;
             case static_cast<uint8_t>(MessageType::Cmd):   out = MessageType::Cmd;   return true;
-            case 'R': /* legacy: Req */                    out = MessageType::Cmd;   return true;
             case static_cast<uint8_t>(MessageType::Done):  out = MessageType::Done;  return true;
             default: return false;
         }
