@@ -40,21 +40,6 @@ public:
 LoopbackAdapter adapter;
 tinylink::TinyLink<TestPayload, LoopbackAdapter> link(adapter);
 
-/** @brief Reset the state machine and virtual clock before every test case */
-static void setUp(void) {
-    link.flush();
-    link.clearStats();
-    link.onReceive(nullptr);
-    adapter.setMillis(0);
-    adapter.getRawBuffer().clear();
-    g_callbackTriggered = false;
-}
-
-/** @brief Reset state after every test case */
-static void tearDown(void) {
-    // No specific teardown required for this suite
-}
-
 /** 
  * @brief TEST: End-to-end success.
  * Verifies Send -> COBS Encode -> Decode -> Verify Fletcher-16.
@@ -966,7 +951,7 @@ void test_crc_endian_sensitivity(void) {
     TEST_ASSERT_EQUAL_UINT16(1, link.getStats().crcErrs);
 }
 
-static int main(int argc, char** argv) {
+int register_protocol_tests(int argc, char** argv) {
     UNITY_BEGIN();
 
     // --- Core Protocol & Asynchronous Events ---
