@@ -924,8 +924,6 @@ void test_crc_endian_sensitivity(void) {
 }
 
 void register_protocol_tests(void) {
-    UNITY_BEGIN();
-
     // --- Core Protocol & Asynchronous Events ---
     RUN_TEST(test_cobs_loopback);                /**< Basic encode/decode/verify pipeline */
     RUN_TEST(test_cobs_zero_payload);            /**< COBS transparency with all-zero data */
@@ -998,6 +996,4 @@ void register_protocol_tests(void) {
     RUN_TEST(test_truncated_cobs_rejection);
     RUN_TEST(test_fletcher_overflow_stability);
     RUN_TEST(test_crc_endian_sensitivity);
-
-    return UNITY_END();
 }
