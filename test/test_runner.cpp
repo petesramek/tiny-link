@@ -6,6 +6,7 @@ void register_fletcher16_tests(void);
 void register_cobs_tests(void);
 void register_packet_tests(void);
 void register_protocol_tests(void);
+void register_callback_tests(void);
 
 /** @brief Reset the state machine and virtual clock before every test case */
 void setUp(void) {
@@ -31,6 +32,7 @@ int main(int argc, char** argv) {
     register_cobs_tests();
     register_packet_tests();
     register_protocol_tests();
+    register_callback_tests();
 
     return UNITY_END();
 }
