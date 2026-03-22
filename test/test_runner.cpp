@@ -7,7 +7,7 @@ void register_packet_tests(void);
 void register_protocol_tests(void);
 
 /** @brief Reset the state machine and virtual clock before every test case */
-static void setUp(void) {
+void setUp(void) {
     link.flush();
     link.clearStats();
     link.onReceive(nullptr);
@@ -17,7 +17,7 @@ static void setUp(void) {
 }
 
 /** @brief Reset state after every test case */
-static void tearDown(void) {
+void tearDown(void) {
     // No specific teardown required for this suite
 }
 
