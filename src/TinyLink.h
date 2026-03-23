@@ -13,6 +13,7 @@
 #include "version.h"
 #include "protocol/internal/AckMessage.h"
 #include "protocol/internal/HandshakeMessage.h"
+#include "protocol/LogLevel.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -115,12 +116,12 @@ namespace tinylink {
         bool send_internal(uint8_t wireType, uint8_t seq, const uint8_t *payload, size_t len, bool internal) {
             if (!_hw->isOpen()) return false;
 
-            // Use a local buffer sized for the largest internal payload (TinyAck = 2 bytes).
-            // Plain packet layout: [type(1)][seq(1)][len(1)][payload][crc_lo(1)][crc_hi(1)]
-            // COBS worst-case overhead: ceil(n/254)+1 extra bytes. For n=7: 2 bytes max.
+            // Use local buffers sized for the maximum TinyLink payload (64 bytes).
+            // Plain packet layout: [type(1)][seq(1)][len(1)][payload(0-64)][crc_lo(1)][crc_hi(1)]
+            // COBS worst-case overhead: ceil(n/254)+1 extra bytes. For n=69: 2 bytes max.
             // +4 is a conservative upper bound that keeps the buffer safely oversized.
-            const size_t MAX_INTERNAL_PLAIN = 3 + sizeof(TinyAck) + 2; // 7 bytes
-            const size_t MAX_INTERNAL_ENC   = MAX_INTERNAL_PLAIN + 4;  // 11 bytes (conservative COBS upper bound)
+            const size_t MAX_INTERNAL_PLAIN = 3 + 64 + 2; // 69 bytes (max payload 64 bytes)
+            const size_t MAX_INTERNAL_ENC   = MAX_INTERNAL_PLAIN + 4;  // 73 bytes (conservative COBS upper bound)
             uint8_t pBuf[MAX_INTERNAL_PLAIN];
             uint8_t rawBuf[MAX_INTERNAL_ENC];
 
@@ -302,7 +303,7 @@ namespace tinylink {
         // -------------------------------------------------------------------------
         // TX: Encode + Send Frame
         // -------------------------------------------------------------------------
-        void send(uint8_t type, const T& payload) {
+        void sendData(uint8_t type, const T& payload) {
             if (!_hw->isOpen()) return;
 
             _currSeq = _nextSeq++;
@@ -315,6 +316,49 @@ namespace tinylink {
             _hw->write(0x00);
 
             _rawIdx = 0;
+        }
+
+        // -------------------------------------------------------------------------
+        // Logging API: Send a compact log message as a Debug ('g') frame.
+        //
+        // Wire payload layout: [level:1][code_lo:1][code_hi:1][text_len:1][text...]
+        // text is truncated to MAX_LOG_TEXT (48) bytes; no NUL terminator on wire.
+        // -------------------------------------------------------------------------
+        static const size_t MAX_LOG_TEXT = 48;
+
+        bool sendLog(LogLevel level, uint16_t code, const char *text) {
+            return sendLog(static_cast<uint8_t>(level), code, text);
+        }
+
+        bool sendLog(uint8_t level, uint16_t code, const char *text) {
+            if (!_hw->isOpen()) return false;
+
+            size_t textLen = 0;
+            if (text) {
+                while (text[textLen] != '\0' && textLen < MAX_LOG_TEXT) {
+                    ++textLen;
+                }
+            }
+
+            // Assemble payload: [level:1][code_lo:1][code_hi:1][text_len:1][text...]
+            // Stack-allocates up to 52 bytes (1+2+1+MAX_LOG_TEXT). Callers on
+            // severely RAM-constrained platforms (e.g. <1 KB stack) should keep
+            // MAX_LOG_TEXT in mind or reduce it via a subclass / compile-time
+            // override.
+            uint8_t buf[1 + 2 + 1 + MAX_LOG_TEXT];
+            size_t pos = 0;
+            buf[pos++] = level;
+            buf[pos++] = static_cast<uint8_t>(code & 0xFF);
+            buf[pos++] = static_cast<uint8_t>((code >> 8) & 0xFF);
+            buf[pos++] = static_cast<uint8_t>(textLen);
+            if (textLen > 0) {
+                memcpy(buf + pos, text, textLen);
+                pos += textLen;
+            }
+
+            _currSeq = _nextSeq++;
+            return send_internal(message_type_to_wire(MessageType::Debug),
+                                 _currSeq, buf, pos, /*internal=*/false);
         }
     };
 

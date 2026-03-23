@@ -18,7 +18,7 @@
  */
 void test_cobs_loopback(void) {
     TestPayload data = { 98765, 3.1415f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
     while(adapter.available() > 0 && !link.available()) {
         link.update();
@@ -35,7 +35,7 @@ void test_cobs_loopback(void) {
  */
 void test_cobs_zero_payload(void) {
     TestPayload zeros = { 0, 0.0f }; 
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), zeros);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), zeros);
     
     while(adapter.available() > 0 && !link.available()) {
         link.update();
@@ -53,7 +53,7 @@ void test_cobs_resync(void) {
     link.update(); 
 
     TestPayload data = { 1, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
     while(adapter.available() > 0 && !link.available()) {
         link.update();
@@ -68,7 +68,7 @@ void test_cobs_resync(void) {
  */
 void test_cobs_crc_failure(void) {
     TestPayload data = { 10, 2.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
     std::vector<uint8_t>& buf = adapter.getRawBuffer();
     if (buf.size() > 3) {
@@ -90,7 +90,7 @@ void test_cobs_crc_failure(void) {
 void test_async_callback(void) {
     link.onReceive(testCallback);
     TestPayload data = { 1, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
     while(adapter.available() > 0) {
         link.update();
@@ -122,8 +122,8 @@ void test_callback_burst(void) {
     link.onReceive([](const TestPayload& d) { triggerCount++; });
 
     TestPayload p = { 1, 1.1f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
 
     while(adapter.available() > 0) {
         link.update();
@@ -148,7 +148,7 @@ void test_timeout_cleanup(void) {
     TEST_ASSERT_EQUAL_UINT32(1, link.getStats().timeout);
     
     TestPayload data = { 1, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     while(adapter.available() > 0) link.update();
     
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "Engine failed to recover after timeout");
@@ -163,7 +163,7 @@ void test_double_delimiter_resilience(void) {
     uint8_t noise[] = { 0x00, 0x00, 0x00 };
     adapter.inject(noise, sizeof(noise));
     
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     while(adapter.available() > 0) link.update();
     
     TEST_ASSERT_TRUE(link.available());
@@ -195,7 +195,7 @@ void test_buffer_overflow_protection(void) {
     link.update();
     
     TestPayload data = { 88, 8.8f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     while(adapter.available() > 0 && !link.available()) {
         link.update();
@@ -210,7 +210,7 @@ void test_buffer_overflow_protection(void) {
  */
 void test_type_filtering(void) {
     TestPayload data = { 55, 5.5f };
-    link.send('A', data); 
+    link.sendData('A', data); 
     
     while(adapter.available() > 0 && !link.available()) link.update();
     
@@ -223,10 +223,10 @@ void test_type_filtering(void) {
  */
 void test_sequence_tracking(void) {
     TestPayload data = { 1, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     uint8_t seq1 = link.seq();
     
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     uint8_t seq2 = link.seq();
     
     TEST_ASSERT_EQUAL_UINT8(seq1 + 1, seq2);
@@ -238,7 +238,7 @@ void test_sequence_tracking(void) {
  */
 void test_buffer_isolation(void) {
     TestPayload p1 = { 111, 1.1f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
     while(adapter.available() > 0 && !link.available()) link.update();
     
     // Inject a partial/corrupt packet
@@ -259,12 +259,12 @@ void test_sequence_wrap_around(void) {
     TestPayload data = { 1, 1.0f };
     
     // 1. Get the starting sequence
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     uint8_t startSeq = link.seq(); 
 
     // 2. Send 256 more packets to complete a full circle
     for(int i = 0; i < 256; i++) {
-        link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+        link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
         while(adapter.available() > 0) {
             link.update();
             if(link.available()) link.flush();
@@ -282,7 +282,7 @@ void test_sequence_wrap_around(void) {
  */
 void test_float_extremes(void) {
     TestPayload data = { 100, NAN };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     while(adapter.available() > 0 && !link.available()) {
         link.update();
@@ -298,7 +298,7 @@ void test_float_extremes(void) {
  */
 void test_timeout_boundary(void) {
     TestPayload data = { 123, 4.56f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
     // Grab the raw bytes from the loopback
     std::vector<uint8_t> raw = adapter.getRawBuffer();
@@ -361,7 +361,7 @@ void test_mid_frame_sync_reset(void) {
     
     // Immediately send a full valid packet starting with 0x00
     TestPayload data = { 5, 5.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     while(adapter.available() > 0) link.update();
     
@@ -391,7 +391,7 @@ void test_minimum_payload(void) {
     tinylink::TinyLink<TinyStruct, LoopbackAdapter> tinyLink(adapter);
     TinyStruct s = { 0xFE };
     
-    tinyLink.send(static_cast<uint8_t>(tinylink::MessageType::Data), s);
+    tinyLink.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), s);
     
     while(adapter.available() > 0 && !tinyLink.available()) {
         tinyLink.update();
@@ -408,7 +408,7 @@ void test_type_validation(void) {
     tinylink::TinyLink<OtherStruct, LoopbackAdapter> otherLink(adapter);
     OtherStruct data = { 0xDEADBEEF };
     
-    otherLink.send('X', data); // Type 'X'
+    otherLink.sendData('X', data); // Type 'X'
     while(adapter.available() > 0) otherLink.update();
     
     // The engine MUST report type 'X', allowing the user to reject it
@@ -441,7 +441,7 @@ void test_cold_boot_sync(void) {
 /** @test Verifies that a zero at the very first byte of the payload is encoded/decoded correctly */
 void test_leading_zero_payload(void) {
     TestPayload data = { 0x00FFFFFF, 1.0f }; // Leading zero in the uint32
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     while(adapter.available() > 0) link.update();
     TEST_ASSERT_EQUAL_UINT32(0x00FFFFFF, link.peek().uptime);
 }
@@ -449,7 +449,7 @@ void test_leading_zero_payload(void) {
 /** @test Verifies that Fletcher-16 detects swapped bytes (which simple checksums miss) */
 void test_swapped_byte_detection(void) {
     TestPayload data = { 0x11223344, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     std::vector<uint8_t>& buf = adapter.getRawBuffer();
     if (buf.size() > 10) {
@@ -471,7 +471,7 @@ void test_crosstalk_rejection(void) {
     tinylink::TinyLink<Large, LoopbackAdapter> linkLarge(adapter);
     
     Small s = { 0xFF };
-    linkSmall.send('S', s);
+    linkSmall.sendData('S', s);
     
     // Update the LARGE link with SMALL data
     while(adapter.available() > 0) linkLarge.update();
@@ -485,7 +485,7 @@ void test_crosstalk_rejection(void) {
 /** @test Verifies that a single bit-flip in the payload is caught by Fletcher-16 */
 void test_single_bit_flip_detection(void) {
     TestPayload data = { 0x00, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     std::vector<uint8_t>& buf = adapter.getRawBuffer();
     // Flip the LSB of the first data byte (usually at index 4 or 5 after header)
@@ -502,7 +502,7 @@ void test_trailing_zero_payload(void) {
     tinylink::TinyLink<TailZero, LoopbackAdapter> tailLink(adapter);
     
     TailZero data = { 0xABCD, 0x00 };
-    tailLink.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    tailLink.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     while(adapter.available() > 0) tailLink.update();
     TEST_ASSERT_TRUE(tailLink.available());
@@ -512,8 +512,8 @@ void test_trailing_zero_payload(void) {
 /** @test Verifies that back-to-back packets with minimal spacing are both received */
 void test_minimal_interframe_spacing(void) {
     TestPayload p = { 1, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     
     int count = 0;
     while(adapter.available() > 0) {
@@ -530,7 +530,7 @@ void test_minimal_interframe_spacing(void) {
 void test_ghost_zero_detection(void) {
     TestPayload data; 
     memset(&data, 0xFF, sizeof(data));
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     std::vector<uint8_t>& buf = adapter.getRawBuffer();
     // Flip a bit in the middle of the payload to make it 0x00
@@ -565,7 +565,7 @@ void test_mid_frame_reset(void) {
     
     // _rawIdx should be 0 now
     TestPayload data = { 1, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     while(adapter.available() > 0) link.update();
     
     TEST_ASSERT_TRUE_MESSAGE(link.available(), "Double start failed to reset state machine");
@@ -583,7 +583,7 @@ void test_structural_size_mismatch(void) {
     tinylink::TinyLink<NewData, LoopbackAdapter> espLink(adapter);
     
     NewData d = {1, 2, 3};
-    espLink.send(static_cast<uint8_t>(tinylink::MessageType::Data), d); // Sends 17 bytes (3+12+2)
+    espLink.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), d); // Sends 17 bytes (3+12+2)
     
     // TinyLink<TestPayload> expects 13 bytes (3+8+2)
     while(adapter.available() > 0) link.update();
@@ -595,9 +595,9 @@ void test_structural_size_mismatch(void) {
 /** @test Verifies that the engine can handle packets with no inter-frame gap */
 void test_zero_gap_stress(void) {
     TestPayload p = {10, 1.0f};
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     // Manually inject a second packet immediately
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     
     int count = 0;
     while(adapter.available() > 0) {
@@ -630,7 +630,7 @@ void test_timeout_precision(void) {
 /** @test Verifies that a 0x00 byte inside the payload is correctly handled by COBS */
 void test_payload_zero_transparency(void) {
     TestPayload data = { 0x11002233, 0.0f }; // Contains two zeros in binary
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     while(adapter.available() > 0 && !link.available()) {
         link.update();
@@ -655,7 +655,7 @@ void test_micro_frame_noise_suppression(void) {
 void test_split_integer_alignment(void) {
     // 0x11223344: We want the COBS 'pointer' to fall between 0x22 and 0x33
     TestPayload data = { 0x11223344, 1.0f }; 
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     while(adapter.available() > 0) link.update();
     TEST_ASSERT_EQUAL_UINT32(0x11223344, link.peek().uptime);
 }
@@ -665,11 +665,11 @@ void test_reentrant_lock_safety(void) {
     TestPayload p1 = { 100, 1.0f };
     TestPayload p2 = { 200, 2.0f };
     
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
     while(adapter.available() > 0 && !link.available()) link.update();
     
     // Packet 1 is now 'available'. Inject Packet 2.
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p2);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p2);
     link.update(); // This should be ignored because _hasNew is true
     
     TEST_ASSERT_EQUAL_UINT32(100, link.peek().uptime);
@@ -692,7 +692,7 @@ void test_fletcher_contrast_integrity(void) {
     tinylink::TinyLink<Contrast, LoopbackAdapter> cLink(adapter);
     Contrast c = { 0x00, 0xFF };
     
-    cLink.send('C', c);
+    cLink.sendData('C', c);
     while(adapter.available() > 0) cLink.update();
     TEST_ASSERT_TRUE(cLink.available());
 }
@@ -700,7 +700,7 @@ void test_fletcher_contrast_integrity(void) {
 /** @test Verifies that the 16-bit checksum is packed and unpacked in a fixed endian order */
 void test_endian_checksum_consistency(void) {
     TestPayload data = { 0xAABBCCDD, 1.23f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     std::vector<uint8_t>& buf = adapter.getRawBuffer();
     
@@ -720,7 +720,7 @@ void test_endian_checksum_consistency(void) {
 /** @test Verifies that the state machine persists across fragmented single-byte arrivals */
 void test_fragmented_arrival_persistence(void) {
     TestPayload data = { 5, 5.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     std::vector<uint8_t> raw = adapter.getRawBuffer();
     adapter.getRawBuffer().clear();
 
@@ -735,7 +735,7 @@ void test_fragmented_arrival_persistence(void) {
 /** @test Verifies bit-transparency for negative values and maximum unsigned integers */
 void test_signed_boundary_integrity(void) {
     TestPayload data = { 0xFFFFFFFF, -123.45f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     while(adapter.available() > 0) link.update();
     
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFF, link.peek().uptime);
@@ -754,7 +754,7 @@ void test_callback_hotswap_safety(void) {
 
     // Complete the packet
     TestPayload data = {1, 1.0f};
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     while(adapter.available() > 0) link.update();
     TEST_ASSERT_TRUE_MESSAGE(hotswapFired, "Hot-swapped callback was not invoked");
 }
@@ -764,12 +764,12 @@ void test_checksum_independence(void) {
     TestPayload p1 = { 0x11111111, 1.0f };
     TestPayload p2 = { 0x22222222, 2.0f };
     
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
     while(adapter.available() > 0) link.update();
     uint16_t crc1 = link.getStats().packets; // Check if p1 passed
     link.flush();
 
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p2);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p2);
     while(adapter.available() > 0) link.update();
     
     TEST_ASSERT_EQUAL_UINT32(2, link.getStats().packets);
@@ -805,7 +805,7 @@ void test_zero_sum_integrity(void) {
     tinylink::TinyLink<AllOnes, LoopbackAdapter> aLink(adapter);
     AllOnes data = { 0x00, 0x00 }; // Often results in specific sum patterns
     
-    aLink.send('D', data);
+    aLink.sendData('D', data);
     while(adapter.available() > 0) aLink.update();
     TEST_ASSERT_TRUE(aLink.available());
 }
@@ -813,7 +813,7 @@ void test_zero_sum_integrity(void) {
 /** @test Verifies that the checksum protects the very end of the payload */
 void test_trailing_bit_integrity(void) {
     TestPayload data = { 0, 1.0f };  
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
     
     std::vector<uint8_t>& buf = adapter.getRawBuffer();
     // Index 10 is typically the last byte of an 8-byte payload in a 13-byte frame
@@ -832,7 +832,7 @@ void test_fletcher_modulo_boundary(void) {
     // 0xFF (255) is the modulo identity for Fletcher.  
     // Testing if 0x00 and 0xFF are treated correctly in the accumulator.
     ModData d = { 0xFF, 0xFF }; 
-    mLink.send('M', d);
+    mLink.sendData('M', d);
     while(adapter.available() > 0) mLink.update();
     TEST_ASSERT_TRUE(mLink.available());
 }
@@ -840,11 +840,11 @@ void test_fletcher_modulo_boundary(void) {
 /** @test Verifies that the engine handles a new frame delimiter immediately following a valid CRC */
 void test_tight_frame_overlap(void) {
     TestPayload p = { 1, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     // Manually inject a second delimiter to stress the sync logic
     uint8_t zero = 0x00;
     adapter.inject(&zero, 1);
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
 
     int count = 0;
     while(adapter.available() > 0) {
@@ -858,7 +858,7 @@ void test_tight_frame_overlap(void) {
 void test_callback_deregistration_safety(void) {
     link.onReceive(testCallback);
     TestPayload p = { 1, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     
     // Halfway through, kill the callback
     link.onReceive(nullptr);
@@ -877,7 +877,7 @@ void test_struct_packing_integrity(void) {
 /** @test Verifies that new junk data cannot overwrite un-flushed valid data */
 void test_unflushed_data_protection(void) {
     TestPayload p1 = { 0xDEADC0DE, 1.0f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
     while(adapter.available() > 0 && !link.available()) link.update();
 
     // Inject 50 bytes of 0xFF junk
@@ -892,7 +892,7 @@ void test_unflushed_data_protection(void) {
 void test_primitive_type_support(void) {
     tinylink::TinyLink<uint8_t, LoopbackAdapter> pLink(adapter);
     uint8_t val = 0xAB;
-    pLink.send('P', val);
+    pLink.sendData('P', val);
     while(adapter.available() > 0) pLink.update();
     TEST_ASSERT_EQUAL_UINT8(0xAB, pLink.peek());
 }
@@ -909,7 +909,7 @@ void test_truncated_cobs_rejection(void) {
 /** @test Verifies Fletcher-16 stability with a high-bit-density (all 0xFF) payload */
 void test_fletcher_overflow_stability(void) {
     TestPayload p; memset(&p, 0xFF, sizeof(p));
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     while(adapter.available() > 0) link.update();
     TEST_ASSERT_TRUE(link.available());
 }
@@ -917,7 +917,7 @@ void test_fletcher_overflow_stability(void) {
 /** @test Verifies that swapping CRC endianness results in a rejection */
 void test_crc_endian_sensitivity(void) {
     TestPayload p = {1, 1.0f};
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     std::vector<uint8_t>& b = adapter.getRawBuffer();
     // Swap last two bytes before 0x00
     std::swap(b[b.size()-2], b[b.size()-3]);

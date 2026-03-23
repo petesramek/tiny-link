@@ -21,7 +21,7 @@ void loop() {
         
         // Respond with a command
         MyData cmd = { millis(), 0.0f, 1 };
-        link.send(TYPE_DATA, cmd);
+        link.sendData(TYPE_DATA, cmd);
         
         link.flush();
     }

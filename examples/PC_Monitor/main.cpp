@@ -46,7 +46,7 @@ int main() {
         static auto lastSend = hw.millis();
         if (hw.millis() - lastSend > 5000) {
             MyData cmd = { (uint32_t)hw.millis(), 0.0f, 1 };
-            link.send(TYPE_DATA, cmd);
+            link.sendData(TYPE_DATA, cmd);
             std::cout << "[SENT] Command 1 to MCU" << std::endl;
             lastSend = hw.millis();
         }

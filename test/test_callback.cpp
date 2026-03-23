@@ -27,8 +27,8 @@ void test_callback_receives_multiple_frames(void) {
     link.onReceive([](const TestPayload&) { callCount++; });
 
     TestPayload p = { 42, 1.5f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
 
     while (adapter.available() > 0) {
         link.update();
@@ -49,7 +49,7 @@ void test_callback_mode_does_not_set_available(void) {
     link.onReceive([](const TestPayload&) { /* handled */ });
 
     TestPayload p = { 7, 0.1f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
 
     while (adapter.available() > 0) {
         link.update();
@@ -68,7 +68,7 @@ void test_polling_mode_sets_available_without_callback(void) {
     /* No callback registered (setUp already cleared it) */
 
     TestPayload p = { 99, 9.9f };
-    link.send(static_cast<uint8_t>(tinylink::MessageType::Data), p);
+    link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
 
     while (adapter.available() > 0 && !link.available()) {
         link.update();
