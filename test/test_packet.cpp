@@ -1,7 +1,7 @@
 #include <unity.h>
 #include <stdint.h>
 #include <string.h>
-#include "Packet.h"
+#include "internal/codec/Packet.h"
 
 void test_packet_roundtrip(void) {
     uint8_t payload[] = {1,2,3,4,5};

@@ -5,7 +5,7 @@
 
 #include <unity.h>
 #include <string.h>
-#include "protocol/internal/AckMessage.h"
+#include "internal/protocol/AckMessage.h"
 
 using namespace tinylink;
 

@@ -5,7 +5,7 @@
 
 #include <unity.h>
 #include <string.h>
-#include "protocol/internal/LogMessage.h"
+#include "internal/protocol/LogMessage.h"
 
 using namespace tinylink;
 

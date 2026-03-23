@@ -5,8 +5,8 @@
  * Payload wire-format headers (TinyAck, LogMessage) are internal
  * implementation details and are not re-exported here. Include them
  * explicitly from their internal paths if needed:
- *   #include "protocol/internal/AckMessage.h"
- *   #include "protocol/internal/LogMessage.h"
+ *   #include "internal/protocol/AckMessage.h"
+ *   #include "internal/protocol/LogMessage.h"
  */
 
 #ifndef TINY_PROTOCOL_H

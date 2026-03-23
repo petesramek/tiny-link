@@ -7,13 +7,13 @@
 #define TINY_LINK_H
 
 #include "TinyProtocol.h"
-#include "CobsCodec.h"
-#include "Fletcher16.h"
-#include "Packet.h"
+#include "internal/codec/CobsCodec.h"
+#include "internal/codec/Fletcher16.h"
+#include "internal/codec/Packet.h"
 #include "version.h"
-#include "protocol/internal/AckMessage.h"
-#include "protocol/internal/LogMessage.h"
-#include "protocol/internal/HandshakeMessage.h"
+#include "internal/protocol/AckMessage.h"
+#include "internal/protocol/LogMessage.h"
+#include "internal/protocol/HandshakeMessage.h"
 #include "protocol/LogLevel.h"
 #include <stdint.h>
 #include <string.h>

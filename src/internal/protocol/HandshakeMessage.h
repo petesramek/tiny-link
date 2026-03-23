@@ -10,7 +10,7 @@
 #define TINYLINK_INTERNAL_HANDSHAKEMESSAGE_H
 
 #include <stdint.h>
-#include "protocol/internal/Packed.h"
+#include "internal/protocol/Packed.h"
 
 namespace tinylink {
 

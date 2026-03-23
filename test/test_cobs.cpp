@@ -10,7 +10,7 @@
 #include <unity.h>
 #include <stdint.h>
 #include <string.h>
-#include "CobsCodec.h"
+#include "internal/codec/CobsCodec.h"
 
 using namespace tinylink::codec;
 
