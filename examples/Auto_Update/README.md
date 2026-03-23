@@ -1,15 +1,17 @@
 # Auto Update — Three Ways to Drive TinyLink
 
-This example demonstrates **all three supported update modes** side by side so
-you can choose the one that best fits your hardware and application constraints.
-
-TinyLink's engine must be called periodically to process incoming serial bytes,
-manage protocol timeouts, and fire callbacks.  Previously, interrupt-driven
-updates required an explicit `enableAutoUpdate()` call.  Since v0.4.x that step
-is **no longer required**: the constructor automatically registers the instance,
-so every mode works with zero extra setup.
+> **Looking for a complete two-device example?**  
+> The [`IoT_Sensor_Gateway_Polling`](../IoT_Sensor_Gateway_Polling/README.md),
+> [`IoT_Sensor_Gateway_TimerISR`](../IoT_Sensor_Gateway_TimerISR/README.md), and
+> [`IoT_Sensor_Gateway_SerialEvent`](../IoT_Sensor_Gateway_SerialEvent/README.md)
+> examples show a full ATtiny88 ↔ ESP8266 bidirectional scenario — with
+> handshake, request, ACK, response, and cloud upload — in each of the three
+> update modes.  This folder contains minimal single-device mode sketches for
+> quick reference.
 
 ---
+
+# Auto Update — Mode Reference Sketches
 
 ## 🔍 Mode Comparison
 

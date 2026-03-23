@@ -579,7 +579,13 @@ namespace tinylink {
                                     // Callback fires while state is FRAME_COMPLETE
                                     // so it can observe the dispatch moment.
                                     _onDataReceived(_data);
-                                    _state = nextState;
+                                    // If the callback replied via sendData() the state
+                                    // has already advanced (e.g. to AWAITING_ACK).
+                                    // Only apply the idle nextState when the callback
+                                    // left _state unchanged (still FRAME_COMPLETE).
+                                    if (_state == TinyState::FRAME_COMPLETE) {
+                                        _state = nextState;
+                                    }
                                 } else {
                                     // Polling: transition first, then signal.
                                     _state  = nextState;
@@ -656,6 +662,35 @@ namespace tinylink {
                 _state    = TinyState::AWAITING_ACK;
                 _lastSent = _hw->millis();
             }
+        }
+
+        // ---- sendAck() — Send an ACK for the last received user data frame --
+        //
+        // Call this from onDataReceived() (or from polling code after peek())
+        // when the peer has handshake mode enabled (begin() was called) and is
+        // waiting in AWAITING_ACK.  The peer exits that state immediately rather
+        // than waiting for the ACK timeout.
+        //
+        // Calling sendAck() from inside onDataReceived() is safe and recommended:
+        //   void onData(const T& d) {
+        //       link.sendAck();           // release peer from AWAITING_ACK
+        //       link.sendData(TYPE, reply); // send response (→ AWAITING_ACK)
+        //   }
+        //
+        // If begin() was never called (no handshake mode), the peer is never in
+        // AWAITING_ACK, so this call has no observable effect.
+        //
+        // @param result  Status code to include in the ACK (default STATUS_OK).
+        // @return true on success; false if the port is closed.
+        //
+        bool sendAck(TinyStatus result = TinyStatus::STATUS_OK) {
+            TinyAck ack;
+            ack.seq    = _currSeq;   // echo the sequence of the last received frame
+            ack.result = result;
+            return send_internal(
+                message_type_to_wire(MessageType::Ack), _currSeq,
+                reinterpret_cast<const uint8_t*>(&ack), sizeof(ack),
+                /*isInternal=*/true);
         }
 
 

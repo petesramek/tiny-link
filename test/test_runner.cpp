@@ -7,6 +7,7 @@ void register_cobs_tests(void);
 void register_packet_tests(void);
 void register_protocol_tests(void);
 void register_callback_tests(void);
+void register_sendack_tests(void);
 void register_stats_tests(void);
 void register_ackmessage_tests(void);
 void register_logmessage_tests(void);
@@ -38,6 +39,7 @@ int main(int argc, char** argv) {
     register_packet_tests();
     register_protocol_tests();
     register_callback_tests();
+    register_sendack_tests();
     register_stats_tests();
     register_ackmessage_tests();
     register_logmessage_tests();

@@ -344,3 +344,101 @@ void register_callback_tests(void) {
     RUN_TEST(test_auto_update_isr_works_without_enable_call);
     RUN_TEST(test_enable_auto_update_switches_instance);
 }
+
+// ---------------------------------------------------------------------------
+// sendAck()
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief TEST: sendAck() releases the peer from AWAITING_ACK.
+ *
+ * After A sends data (handshake mode), A enters AWAITING_ACK.  B receives
+ * the data and calls sendAck().  A's next update() must exit AWAITING_ACK
+ * and return to WAIT_FOR_SYNC without waiting for the timeout.
+ */
+void test_sendack_clears_peer_awaiting_ack(void) {
+    static TinyDuplexTestAdapter dA, dB;
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lA(dA);
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lB(dB);
+
+    dA.connect(dB); dB.connect(dA);
+    dA.setMillis(0); dB.setMillis(0);
+    dA.getRawBuffer().clear(); dB.getRawBuffer().clear();
+    lA.reset(); lB.reset();
+
+    // Both connect via handshake.
+    lA.begin(); lB.begin();
+    for (int i = 0; i < 10; ++i) { lA.update(); lB.update(); }
+    TEST_ASSERT_TRUE(lA.connected());
+    TEST_ASSERT_TRUE(lB.connected());
+
+    static bool ackSent;
+    ackSent = false;
+    lB.onDataReceived([](const TestPayload&) {
+        // B acknowledges A's frame immediately.
+        lB.sendAck();
+        ackSent = true;
+    });
+
+    TestPayload p = { 10, 1.0f };
+    lA.sendData(static_cast<uint8_t>(MessageType::Data), p);
+    TEST_ASSERT_EQUAL(TinyState::AWAITING_ACK, lA.state());
+
+    // One round-trip: B receives data + sends ACK; A receives ACK.
+    for (int i = 0; i < 10; ++i) { lB.update(); lA.update(); }
+
+    TEST_ASSERT_TRUE_MESSAGE(ackSent, "B's callback must have fired");
+    TEST_ASSERT_EQUAL_MESSAGE(TinyState::WAIT_FOR_SYNC, lA.state(),
+        "A must leave AWAITING_ACK once the ACK arrives");
+}
+
+/**
+ * @brief TEST: Calling sendData() from inside onDataReceived() preserves AWAITING_ACK.
+ *
+ * This tests the state-overwrite fix: update() must NOT clobber the
+ * AWAITING_ACK state that sendData() sets when called from a callback.
+ */
+void test_reply_from_callback_preserves_awaiting_ack(void) {
+    static TinyDuplexTestAdapter dA2, dB2;
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lA2(dA2);
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lB2(dB2);
+
+    dA2.connect(dB2); dB2.connect(dA2);
+    dA2.setMillis(0); dB2.setMillis(0);
+    dA2.getRawBuffer().clear(); dB2.getRawBuffer().clear();
+    lA2.reset(); lB2.reset();
+
+    lA2.begin(); lB2.begin();
+    for (int i = 0; i < 10; ++i) { lA2.update(); lB2.update(); }
+
+    static bool replySent;
+    replySent = false;
+    lB2.onDataReceived([](const TestPayload& d) {
+        // B ACKs A's request, then sends a reply of its own.
+        lB2.sendAck();
+        TestPayload reply = { d.uptime + 1, d.value + 1.0f };
+        lB2.sendData(static_cast<uint8_t>(MessageType::Data), reply);
+        replySent = true;
+    });
+
+    TestPayload req = { 1, 0.0f };
+    lA2.sendData(static_cast<uint8_t>(MessageType::Data), req);
+
+    // One round: B processes A's Data, fires callback (ACK + reply), A processes ACK.
+    for (int i = 0; i < 10; ++i) { lB2.update(); lA2.update(); }
+
+    TEST_ASSERT_TRUE_MESSAGE(replySent, "B's callback must have fired and sent a reply");
+    // B must be in AWAITING_ACK (waiting for A to ACK B's reply) —
+    // NOT back in WAIT_FOR_SYNC (which would indicate the state was overwritten).
+    TEST_ASSERT_EQUAL_MESSAGE(TinyState::AWAITING_ACK, lB2.state(),
+        "B must be in AWAITING_ACK after sending a reply from its callback");
+    // A exits AWAITING_ACK after receiving B's ACK.
+    TEST_ASSERT_EQUAL_MESSAGE(TinyState::WAIT_FOR_SYNC, lA2.state(),
+        "A must have exited AWAITING_ACK after receiving B's ACK");
+}
+
+void register_sendack_tests(void) {
+    RUN_TEST(test_sendack_clears_peer_awaiting_ack);
+    RUN_TEST(test_reply_from_callback_preserves_awaiting_ack);
+}
+

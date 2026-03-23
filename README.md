@@ -202,7 +202,53 @@ void serialEvent() {
 > the same type, the last-constructed one is the default ISR target.  Call
 > `link.enableAutoUpdate()` on the desired instance to override.
 
-See `examples/Auto_Update/` for all three modes with a full side-by-side comparison.
+For a complete two-device IoT scenario in all three modes, see the
+[`IoT_Sensor_Gateway_*`](examples/) family of examples below.
+
+---
+
+## 🌐 IoT Sensor Gateway — Full Bidirectional Examples
+
+The `IoT_Sensor_Gateway_*` examples demonstrate a realistic ATtiny88 ↔ ESP8266
+system: the ATtiny88 reads a temperature sensor, the ESP8266 requests readings
+every 60 seconds and forwards them to a cloud endpoint.
+
+### Scenario
+
+```
+ATtiny88                              ESP8266
+    │◄──── Handshake ───────────────────►│  begin() on both sides
+    │             both: WAIT_FOR_SYNC    │
+    │                                    │
+    │◄═══ TYPE_CMD (request) ════════════│  every 60 s
+    │═══ ACK ════════════════════════════►│  sendAck() in callback
+    │═══ TYPE_DATA (temp + uptime) ═════►│
+    │◄══ ACK ════════════════════════════ │  sendAck() in callback
+    │                         ESP: posts to cloud
+```
+
+### `sendAck()` — Releasing the Peer from AWAITING_ACK
+
+When `begin()` is called (handshake mode), every `sendData()` puts the sender
+into `AWAITING_ACK`.  The receiver must call `sendAck()` to release it promptly:
+
+```cpp
+void onReceive(const SensorMessage& data) {
+    link.sendAck();          // ← release peer from AWAITING_ACK immediately
+    link.sendData(TYPE_DATA, response);  // reply — safe to call from callback
+}
+```
+
+### Three Update Modes, Side by Side
+
+| Example folder                     | update() driven by   | ISR-safe callbacks? | HW interrupt? |
+|------------------------------------|----------------------|---------------------|---------------|
+| `IoT_Sensor_Gateway_Polling`       | `loop()`             | ✅ Yes              | ❌ No         |
+| `IoT_Sensor_Gateway_TimerISR`      | Hardware timer ISR   | ⚠ Deferred only    | ✅ Yes        |
+| `IoT_Sensor_Gateway_SerialEvent`   | `serialEvent()`      | ✅ Yes              | ❌ No         |
+
+> **Mode 2 (Timer ISR) rule:** callbacks fire inside a hardware ISR — only set
+> `volatile` flags there.  Call `sendAck()` and `sendData()` from `loop()`.
 
 
 ## 📊 Performance & Telemetry
