@@ -6,11 +6,14 @@
 #ifndef TINY_LINK_H
 #define TINY_LINK_H
 
-#include "TinyProtocol.h"
+#include "protocol/MessageType.h"
+#include "protocol/Status.h"
+#include "protocol/State.h"
+#include "protocol/Stats.h"
 #include "internal/codec/CobsCodec.h"
 #include "internal/codec/Fletcher16.h"
 #include "internal/codec/Packet.h"
-#include "version.h"
+#include "Version.h"
 #include "internal/protocol/AckMessage.h"
 #include "internal/protocol/LogMessage.h"
 #include "internal/protocol/HandshakeMessage.h"
@@ -60,7 +63,10 @@ namespace tinylink {
     template <typename T, typename Adapter, adapter_check_t<Adapter> = 0>
     class TinyLink {
     public:
-        typedef void (*ReceiverCallback)(const T& data);
+        typedef void (*DataCallback)(const T& data);
+        typedef void (*LogCallback)(const LogMessage& msg);
+        typedef void (*HandshakeCallback)(const HandshakeMessage& msg);
+        typedef void (*AckCallback)(const TinyAck& ack);
 
     private:
 
@@ -70,10 +76,14 @@ namespace tinylink {
         //   user data    : 3 + sizeof(T) + 2
         //   internal ACK : 3 + sizeof(TinyAck=2) + 2  = 7
         //   Handshake    : 3 + sizeof(HandshakeMessage=1) + 2 = 6
+        //   Log          : 3 + sizeof(LogMessage=32) + 2 = 37
         //
-        static const size_t INTERNAL_PAYLOAD_SIZE =
+        static const size_t INTERNAL_PAYLOAD_ACK_HS =
             sizeof(TinyAck) > sizeof(HandshakeMessage)
                 ? sizeof(TinyAck) : sizeof(HandshakeMessage);
+        static const size_t INTERNAL_PAYLOAD_SIZE =
+            INTERNAL_PAYLOAD_ACK_HS > sizeof(LogMessage)
+                ? INTERNAL_PAYLOAD_ACK_HS : sizeof(LogMessage);
         static const size_t MAX_PAYLOAD_SIZE =
             sizeof(T) > INTERNAL_PAYLOAD_SIZE
                 ? sizeof(T) : INTERNAL_PAYLOAD_SIZE;
@@ -91,7 +101,12 @@ namespace tinylink {
         Adapter*          _hw;
         T                 _data;
         TinyStats         _stats;
-        ReceiverCallback  _onReceive;
+        DataCallback      _onDataReceived;
+        LogCallback       _onLogReceived;
+        HandshakeCallback _onHandshakeReceived;
+        AckCallback       _onAckReceived;
+
+        static TinyLink*  _s_instance; ///< For enableAutoUpdate() / autoUpdateISR()
 
         uint8_t  _pBuf[PLAIN_SIZE];
         uint8_t  _rawBuf[MAX_FRAME_ENC];
@@ -210,7 +225,9 @@ namespace tinylink {
 
         // ---- Constructor ----------------------------------------------------
         explicit TinyLink(Adapter& hw)
-            : _hw(&hw), _data(), _stats(), _onReceive(nullptr),
+            : _hw(&hw), _data(), _stats(),
+              _onDataReceived(nullptr), _onLogReceived(nullptr),
+              _onHandshakeReceived(nullptr), _onAckReceived(nullptr),
               _rawIdx(0), _currType(0), _currSeq(0), _nextSeq(0),
               _hasNew(false), _lastByte(0), _timeout(250),
               _state(TinyState::WAIT_FOR_SYNC),
@@ -226,8 +243,48 @@ namespace tinylink {
 
         // ---- Configuration --------------------------------------------------
 
-        void onReceive(ReceiverCallback cb) { _onReceive = cb; }
-        void setTimeout(unsigned long ms)   { _timeout = ms; }
+        /** @brief Register a callback for incoming user data frames. */
+        void onDataReceived(DataCallback cb)           { _onDataReceived = cb; }
+        /** @brief Register a callback for incoming log frames. */
+        void onLogReceived(LogCallback cb)             { _onLogReceived = cb; }
+        /** @brief Register a callback for incoming handshake frames. */
+        void onHandshakeReceived(HandshakeCallback cb) { _onHandshakeReceived = cb; }
+        /** @brief Register a callback for incoming ACK frames. */
+        void onAckReceived(AckCallback cb)             { _onAckReceived = cb; }
+
+        void setTimeout(unsigned long ms)              { _timeout = ms; }
+
+        /**
+         * @brief Register this instance for interrupt-driven updates.
+         *
+         * After calling enableAutoUpdate(), the static function autoUpdateISR()
+         * can be passed to a hardware timer or UART interrupt attachment routine.
+         * The ISR will call update() on this TinyLink instance without requiring
+         * the user to do so in their main loop.
+         *
+         * Example (Arduino with TimerOne library):
+         * @code
+         *   link.enableAutoUpdate();
+         *   Timer1.attachInterrupt(TinyLink<MyData, MyAdapter>::autoUpdateISR, 1000);
+         * @endcode
+         *
+         * @note Only one TinyLink instance per T+Adapter type combination can be
+         *       registered at a time. A second call overwrites the previous one.
+         */
+        void enableAutoUpdate() { _s_instance = this; }
+
+        /**
+         * @brief Static ISR-compatible update function.
+         *
+         * Attach this function to a hardware timer, UART RX interrupt, or any
+         * platform-specific interrupt source to drive the protocol engine
+         * automatically.
+         *
+         * @see enableAutoUpdate()
+         */
+        static void autoUpdateISR() {
+            if (_s_instance) _s_instance->update();
+        }
 
         /**
          * @brief Initiate the link and start the handshake exchange.
@@ -278,7 +335,10 @@ namespace tinylink {
             _lastHandshakeSent = 0;
             _lastSent          = 0;
             _stats.clear();
-            _onReceive         = nullptr;
+            _onDataReceived    = nullptr;
+            _onLogReceived     = nullptr;
+            _onHandshakeReceived = nullptr;
+            _onAckReceived     = nullptr;
         }
 
         /** @brief Clears all protocol statistics counters. */
@@ -400,6 +460,11 @@ namespace tinylink {
                                 if (hsLen == sizeof(HandshakeMessage)) {
                                     handleHandshakeMessage(hsBuf, hsLen,
                                                            priorState);
+                                    if (_onHandshakeReceived) {
+                                        HandshakeMessage hm;
+                                        memcpy(&hm, hsBuf, sizeof(hm));
+                                        _onHandshakeReceived(hm);
+                                    }
                                 } else {
                                     // Malformed HS — restore to idle state.
                                     _state = (priorState == TinyState::CONNECTING ||
@@ -421,10 +486,36 @@ namespace tinylink {
                                     ackBuf, sizeof(ackBuf));
                                 if (ackLen == sizeof(TinyAck)) {
                                     _state = TinyState::WAIT_FOR_SYNC;
+                                    if (_onAckReceived) {
+                                        TinyAck ack;
+                                        memcpy(&ack, ackBuf, sizeof(ack));
+                                        _onAckReceived(ack);
+                                    }
                                 } else {
                                     _stats.increment(TinyStatus::ERR_CRC);
                                     _state = priorState;
                                 }
+                                continue;
+                            }
+
+                            // Log: always dispatched via dedicated callback.
+                            if (wireType ==
+                                    message_type_to_wire(MessageType::Log)) {
+                                if (_onLogReceived) {
+                                    LogMessage logMsg;
+                                    uint8_t rtype = 0, rseq = 0;
+                                    size_t logLen = tinylink::packet::unpack(
+                                        _pBuf, dLen, &rtype, &rseq,
+                                        reinterpret_cast<uint8_t*>(&logMsg),
+                                        sizeof(logMsg));
+                                    if (logLen == sizeof(LogMessage)) {
+                                        _onLogReceived(logMsg);
+                                    }
+                                }
+                                _state = (priorState == TinyState::AWAITING_ACK ||
+                                          priorState == TinyState::CONNECTING)
+                                         ? priorState
+                                         : TinyState::WAIT_FOR_SYNC;
                                 continue;
                             }
                         }
@@ -447,10 +538,10 @@ namespace tinylink {
                                     ? TinyState::AWAITING_ACK
                                     : TinyState::WAIT_FOR_SYNC;
 
-                                if (_onReceive) {
+                                if (_onDataReceived) {
                                     // Callback fires while state is FRAME_COMPLETE
                                     // so it can observe the dispatch moment.
-                                    _onReceive(_data);
+                                    _onDataReceived(_data);
                                     _state = nextState;
                                 } else {
                                     // Polling: transition first, then signal.
@@ -554,5 +645,11 @@ namespace tinylink {
     };
 
 } // namespace tinylink
+
+// ---------------------------------------------------------------------------
+// Static member definition (template, so lives in the header)
+// ---------------------------------------------------------------------------
+template <typename T, typename Adapter, tinylink::adapter_check_t<Adapter> N>
+tinylink::TinyLink<T, Adapter, N>* tinylink::TinyLink<T, Adapter, N>::_s_instance = nullptr;
 
 #endif // TINY_LINK_H

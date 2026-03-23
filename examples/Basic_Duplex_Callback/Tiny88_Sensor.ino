@@ -21,7 +21,7 @@ void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     
     // Register the listener
-    link.onReceive(handleIncoming);
+    link.onDataReceived(handleIncoming);
 }
 
 void loop() {

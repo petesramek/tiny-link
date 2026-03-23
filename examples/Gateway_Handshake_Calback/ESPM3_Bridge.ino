@@ -16,7 +16,7 @@ void handleSensorData(const SensorData& data) {
 
 void setup() {
     Serial.begin(9600);
-    sensorLink.onReceive(handleSensorData);
+    sensorLink.onDataReceived(handleSensorData);
 
     // 1. Clear any boot-up "UART noise"
     while(Serial.available()) Serial.read();

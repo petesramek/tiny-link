@@ -1,5 +1,5 @@
 /**
- * @file version.h
+ * @file Version.h
  * @brief Version tracking for the TinyLink library.
  * 
  * Allows for compile-time feature detection and compatibility checks.

@@ -16,7 +16,7 @@ void onStatus(const GatewayStatus& status) {
 
 void setup() {
     Serial.begin(9600);
-    statusLink.onReceive(onStatus);
+    statusLink.onDataReceived(onStatus);
     
     // 1. Wake up ESP (Assuming ESP_EN is on Pin 4)
     pinMode(4, OUTPUT);

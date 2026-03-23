@@ -122,7 +122,7 @@ void test_data_exchange_after_handshake(void) {
     // A sends to B
     static bool bReceived = false;
     bReceived = false;
-    linkB.onReceive([](const TestPayload& p) {
+    linkB.onDataReceived([](const TestPayload& p) {
         if (p.uptime == 0xABCD) bReceived = true;
     });
 
@@ -215,7 +215,7 @@ void test_frame_complete_visible_in_callback(void) {
     static TinyState stateInCallback;
     stateInCallback = TinyState::WAIT_FOR_SYNC;
 
-    link.onReceive([](const TestPayload&) {
+    link.onDataReceived([](const TestPayload&) {
         stateInCallback = link.state();
     });
 
@@ -309,7 +309,7 @@ void test_data_received_while_awaiting_ack(void) {
     // A sends to B (→ AWAITING_ACK), then B sends to A immediately.
     static bool aReceived = false;
     aReceived = false;
-    linkA.onReceive([](const TestPayload& p) {
+    linkA.onDataReceived([](const TestPayload& p) {
         if (p.uptime == 99) aReceived = true;
     });
 

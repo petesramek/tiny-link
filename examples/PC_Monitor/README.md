@@ -6,7 +6,7 @@ This example demonstrates how to use **TinyLink** in a native C++ desktop enviro
 
 **Cross-Platform**: Uses `TinyPosixAdapter` for Linux/macOS and `TinyWindowsAdapter` for Windows.
 **Bi-Directional**: Receives sensor data from the MCU and sends command packets back every 5 seconds.
-**Asynchronous**: Uses the `onReceive` callback to handle incoming COBS frames without blocking the main loop.
+**Asynchronous**: Uses the `onDataReceived` callback to handle incoming COBS frames without blocking the main loop.
 
 ## 🛠 Hardware Setup
 
