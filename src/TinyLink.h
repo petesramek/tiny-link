@@ -156,6 +156,20 @@ namespace tinylink {
             return true;
         }
 
+        // ---- State utility --------------------------------------------------
+        //
+        // Returns priorState unchanged for connection-phase states
+        // (AWAITING_ACK, CONNECTING), otherwise returns WAIT_FOR_SYNC.
+        // Used whenever a non-data event must not disturb an in-progress
+        // connection or ACK wait.
+        //
+        TinyState restoreState(TinyState priorState) const {
+            return (priorState == TinyState::AWAITING_ACK ||
+                    priorState == TinyState::CONNECTING)
+                   ? priorState
+                   : TinyState::WAIT_FOR_SYNC;
+        }
+
         // ---- Handshake handler (symmetric two-frame exchange) ---------------
         //
         // The HandshakeMessage::version byte distinguishes the two frame kinds:
