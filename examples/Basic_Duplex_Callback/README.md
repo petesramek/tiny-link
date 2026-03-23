@@ -4,7 +4,7 @@ This example demonstrates a **full-duplex, bidirectional** link between an **MH-
 
 ## 🌟 Features
 
-- **Callback Logic**: Uses link.onReceive() to trigger functions automatically upon data arrival.
+- **Callback Logic**: Uses link.onDataReceived() to trigger functions automatically upon data arrival.
 - **Bi-Directional**: Both devices act as peers, sending and receiving data simultaneously.
 - **Reliable**: Protected by **COBS framing** and **Fletcher-16 checksums**.
 
@@ -30,7 +30,7 @@ void myHandler(const MyData& data) {
 }
 
 void setup() {
-    link.onReceive(myHandler); // Register the listener
+    link.onDataReceived(myHandler); // Register the listener
 }
 
 void loop() {
@@ -38,7 +38,7 @@ void loop() {
 }
 ```
 
-**`link.onReceive()`**: Registers a custom function to be called as soon as a valid packet is verified.
+**`link.onDataReceived()`**: Registers a custom function to be called as soon as a valid packet is verified.
 **`link.update()`**: Maintains the protocol engine and triggers the registered callback internally.
 **`Asynchronous`**: The callback pattern removes the need for manual `available()` checks or `flush()` calls in your main loop.
 

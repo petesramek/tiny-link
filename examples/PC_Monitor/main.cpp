@@ -34,7 +34,7 @@ int main() {
 
     // 4. Initialize TinyLink
     TinyLink<MyData, PCAdapter> link(hw);
-    link.onReceive(onMcuData);
+    link.onDataReceived(onMcuData);
 
     std::cout << "TinyLink Monitor started on " << PORT << "..." << std::endl;
     std::cout << "Press Ctrl+C to exit." << std::endl;

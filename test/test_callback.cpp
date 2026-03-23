@@ -2,19 +2,27 @@
  * @file test_callback.cpp
  * @brief Regression tests for callback-mode multi-frame reception.
  *
- * Verifies that registering an onReceive callback does not stall the RX
+ * Verifies that registering an onDataReceived callback does not stall the RX
  * engine after the first packet. The engine must continue processing
  * subsequent frames without requiring the user to call flush().
  */
 
 #include <unity.h>
 #include "globals.h"
+#include "adapters/TinyDuplexTestAdapter.h"
+#include "internal/protocol/HandshakeMessage.h"
+#include "internal/protocol/AckMessage.h"
+#include "internal/protocol/LogMessage.h"
+#include "internal/codec/CobsCodec.h"
+#include "internal/codec/Packet.h"
+
+using namespace tinylink;
 
 /**
  * @brief TEST: Callback-mode continuous reception.
  *
  * Feeds two valid encoded frames to a TinyLink instance with a registered
- * onReceive callback. Asserts the callback is invoked exactly twice,
+ * onDataReceived callback. Asserts the callback is invoked exactly twice,
  * proving that the engine does not stall after the first packet.
  *
  * This is a regression test for the bug where _hasNew was set to true even
@@ -24,7 +32,7 @@ void test_callback_receives_multiple_frames(void) {
     static int callCount;
     callCount = 0;
 
-    link.onReceive([](const TestPayload&) { callCount++; });
+    link.onDataReceived([](const TestPayload&) { callCount++; });
 
     TestPayload p = { 42, 1.5f };
     link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
@@ -46,7 +54,7 @@ void test_callback_receives_multiple_frames(void) {
  * the data; no polling is needed).
  */
 void test_callback_mode_does_not_set_available(void) {
-    link.onReceive([](const TestPayload&) { /* handled */ });
+    link.onDataReceived([](const TestPayload&) { /* handled */ });
 
     TestPayload p = { 7, 0.1f };
     link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
@@ -78,8 +86,184 @@ void test_polling_mode_sets_available_without_callback(void) {
         "Polling mode must set available() when no callback is registered");
 }
 
+// ---------------------------------------------------------------------------
+// onLogReceived
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief TEST: onLogReceived fires when an incoming log frame is received.
+ */
+void test_on_log_received_fires(void) {
+    static bool logFired;
+    static uint16_t receivedCode;
+    logFired = false;
+    receivedCode = 0;
+
+    link.onLogReceived([](const LogMessage& msg) {
+        logFired = true;
+        receivedCode = msg.code;
+    });
+
+    link.sendLog(LogLevel::INFO, 0x1234, "hello");
+
+    while (adapter.available() > 0) {
+        link.update();
+    }
+
+    TEST_ASSERT_TRUE_MESSAGE(logFired, "onLogReceived must fire for a Log frame");
+    TEST_ASSERT_EQUAL_UINT16(0x1234, receivedCode);
+}
+
+/**
+ * @brief TEST: Log frames do not reach the data callback.
+ */
+void test_log_frame_not_dispatched_as_data(void) {
+    static bool dataFired;
+    dataFired = false;
+
+    link.onDataReceived([](const TestPayload&) { dataFired = true; });
+
+    link.sendLog(LogLevel::WARN, 0, "test");
+
+    while (adapter.available() > 0) {
+        link.update();
+    }
+
+    TEST_ASSERT_FALSE_MESSAGE(dataFired,
+        "Log frames must not be dispatched to the data callback");
+}
+
+// ---------------------------------------------------------------------------
+// onHandshakeReceived
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief TEST: onHandshakeReceived fires on both HS(v=0) and HS(v=1).
+ */
+void test_on_handshake_received_fires(void) {
+    static TinyDuplexTestAdapter dAdA, dAdB;
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lA(dAdA);
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lB(dAdB);
+
+    dAdA.connect(dAdB);
+    dAdB.connect(dAdA);
+    dAdA.setMillis(0);
+    dAdB.setMillis(0);
+    dAdA.getRawBuffer().clear();
+    dAdB.getRawBuffer().clear();
+    lA.reset();
+    lB.reset();
+
+    static int hsCount;
+    hsCount = 0;
+    lB.onHandshakeReceived([](const HandshakeMessage&) { hsCount++; });
+
+    lA.begin(); // sends HS(v=0) to B's buffer
+    lA.update();
+    lB.update(); // B receives HS(v=0) → callback + sends HS(v=1)
+    lA.update(); // A receives HS(v=1)
+
+    TEST_ASSERT_GREATER_OR_EQUAL_INT_MESSAGE(1, hsCount,
+        "onHandshakeReceived must fire when a handshake frame is received");
+}
+
+// ---------------------------------------------------------------------------
+// onAckReceived
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief TEST: onAckReceived fires when an ACK frame is received while AWAITING_ACK.
+ */
+void test_on_ack_received_fires(void) {
+    static TinyDuplexTestAdapter dAdA2, dAdB2;
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lA2(dAdA2);
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lB2(dAdB2);
+
+    dAdA2.connect(dAdB2);
+    dAdB2.connect(dAdA2);
+    dAdA2.setMillis(0);
+    dAdB2.setMillis(0);
+    dAdA2.getRawBuffer().clear();
+    dAdB2.getRawBuffer().clear();
+    lA2.reset();
+    lB2.reset();
+
+    // Connect both sides
+    lA2.begin(); lB2.begin();
+    for (int i = 0; i < 10; ++i) { lA2.update(); lB2.update(); }
+
+    static bool ackFired;
+    ackFired = false;
+    lA2.onAckReceived([](const TinyAck&) { ackFired = true; });
+
+    // A sends data → goes to AWAITING_ACK
+    TestPayload p = { 1, 1.0f };
+    lA2.sendData(static_cast<uint8_t>(MessageType::Data), p);
+    TEST_ASSERT_EQUAL(TinyState::AWAITING_ACK, lA2.state());
+
+    // Build and inject an ACK from B back to A directly.
+    // Plain frame layout: [wireType:1][seq:1][reserved:1][payload][fcs:2] = 3+N+2
+    // COBS overhead: up to 4 extra bytes for large frames.
+    TinyAck ack;
+    ack.seq    = lA2.seq();
+    ack.result = TinyStatus::STATUS_OK;
+
+    const size_t PLAIN = 3 + sizeof(TinyAck) + 2; // header(3) + payload + fcs(2)
+    const size_t ENC   = PLAIN + 4;               // COBS worst-case overhead
+    uint8_t pBuf[PLAIN];
+    uint8_t rawBuf[ENC];
+    size_t plainLen = tinylink::packet::pack(
+        message_type_to_wire(MessageType::Ack), 0,
+        reinterpret_cast<const uint8_t*>(&ack), sizeof(ack), pBuf, PLAIN);
+    size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen, rawBuf, ENC);
+    uint8_t zero = 0x00;
+    dAdA2.inject(&zero, 1);
+    dAdA2.inject(rawBuf, eLen);
+    dAdA2.inject(&zero, 1);
+
+    lA2.update();
+
+    TEST_ASSERT_TRUE_MESSAGE(ackFired, "onAckReceived must fire when an ACK frame is received");
+    TEST_ASSERT_EQUAL(TinyState::WAIT_FOR_SYNC, lA2.state());
+}
+
+// ---------------------------------------------------------------------------
+// enableAutoUpdate / autoUpdateISR
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief TEST: autoUpdateISR calls update() on the registered instance.
+ *
+ * enableAutoUpdate() registers the TinyLink instance for static dispatch.
+ * Calling autoUpdateISR() (as an ISR would) must drive the engine as if
+ * update() had been called directly.
+ */
+void test_auto_update_isr_drives_engine(void) {
+    static int isr_callCount;
+    isr_callCount = 0;
+
+    link.onDataReceived([](const TestPayload&) { isr_callCount++; });
+    link.enableAutoUpdate();
+
+    TestPayload p = { 55, 5.5f };
+    link.sendData(static_cast<uint8_t>(MessageType::Data), p);
+
+    // Simulate ISR calls instead of manual update() calls.
+    while (adapter.available() > 0) {
+        tinylink::TinyLink<TestPayload, LoopbackAdapter>::autoUpdateISR();
+    }
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, isr_callCount,
+        "autoUpdateISR must drive the engine exactly like update()");
+}
+
 void register_callback_tests(void) {
-    RUN_TEST(test_callback_receives_multiple_frames);    /**< Core regression: no stall in callback mode */
-    RUN_TEST(test_callback_mode_does_not_set_available); /**< Callback mode clears polling flag */
-    RUN_TEST(test_polling_mode_sets_available_without_callback); /**< Polling mode unaffected */
+    RUN_TEST(test_callback_receives_multiple_frames);
+    RUN_TEST(test_callback_mode_does_not_set_available);
+    RUN_TEST(test_polling_mode_sets_available_without_callback);
+    RUN_TEST(test_on_log_received_fires);
+    RUN_TEST(test_log_frame_not_dispatched_as_data);
+    RUN_TEST(test_on_handshake_received_fires);
+    RUN_TEST(test_on_ack_received_fires);
+    RUN_TEST(test_auto_update_isr_drives_engine);
 }

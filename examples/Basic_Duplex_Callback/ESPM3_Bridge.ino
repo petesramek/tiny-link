@@ -28,7 +28,7 @@ void setup() {
     Serial.begin(9600);
 
     // Register the callback
-    link.onReceive(onSensorDataReceived);
+    link.onDataReceived(onSensorDataReceived);
     
     Serial.println("TinyLink v0.4.0 Callback Bridge Started.");
 }

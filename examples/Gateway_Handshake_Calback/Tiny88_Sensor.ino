@@ -26,7 +26,7 @@ void setup() {
     pinMode(4, OUTPUT); // ESP_EN Pin
 
     // Register the asynchronous listener
-    statusLink.onReceive(onGatewayReady);
+    statusLink.onDataReceived(onGatewayReady);
 
     // Initial Trigger: Power on the ESP
     digitalWrite(4, HIGH); 

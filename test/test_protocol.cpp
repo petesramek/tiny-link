@@ -85,10 +85,10 @@ void test_cobs_crc_failure(void) {
 
 /** 
  * @brief TEST: Asynchronous Callback.
- * Verifies that the onReceive callback fires correctly upon valid packet arrival.
+ * Verifies that the onDataReceived callback fires correctly upon valid packet arrival.
  */
 void test_async_callback(void) {
-    link.onReceive(testCallback);
+    link.onDataReceived(testCallback);
     TestPayload data = { 1, 1.0f };
     link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
 
@@ -119,7 +119,7 @@ void test_cobs_double_delimiter(void) {
 void test_callback_burst(void) {
     static int triggerCount;
     triggerCount = 0;
-    link.onReceive([](const TestPayload& d) { triggerCount++; });
+    link.onDataReceived([](const TestPayload& d) { triggerCount++; });
 
     TestPayload p = { 1, 1.1f };
     link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
@@ -751,7 +751,7 @@ void test_callback_hotswap_safety(void) {
 
     static bool hotswapFired;
     hotswapFired = false;
-    link.onReceive([](const TestPayload&){ hotswapFired = true; });
+    link.onDataReceived([](const TestPayload&){ hotswapFired = true; });
 
     // Complete the packet
     TestPayload data = {1, 1.0f};
@@ -857,12 +857,12 @@ void test_tight_frame_overlap(void) {
 
 /** @test Verifies that unregistering a callback mid-stream doesn't cause a null-pointer crash */
 void test_callback_deregistration_safety(void) {
-    link.onReceive(testCallback);
+    link.onDataReceived(testCallback);
     TestPayload p = { 1, 1.0f };
     link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     
     // Halfway through, kill the callback
-    link.onReceive(nullptr);
+    link.onDataReceived(nullptr);
     
     while(adapter.available() > 0) link.update();
     // Should NOT crash, should just finish silently
