@@ -12,6 +12,7 @@
 #include "Packet.h"
 #include "version.h"
 #include "protocol/internal/AckMessage.h"
+#include "protocol/internal/DebugMessage.h"
 #include "protocol/internal/HandshakeMessage.h"
 #include "protocol/LogLevel.h"
 #include <stdint.h>
@@ -81,47 +82,76 @@ namespace tinylink {
     private:
 
         // -------------------------------------------------------------------------
+        // Buffer sizing
+        //
+        // _pBuf must be large enough to hold the decoded plain-text of both user
+        // frames (3 + sizeof(T) + 2) and internal protocol frames (TinyAck,
+        // HandshakeMessage).  We take the maximum across all three so that the
+        // same buffer can safely receive any frame type regardless of T's size.
+        // -------------------------------------------------------------------------
+        static const size_t INTERNAL_PAYLOAD_SIZE =
+            sizeof(TinyAck) > sizeof(HandshakeMessage)
+                ? sizeof(TinyAck)
+                : sizeof(HandshakeMessage);
+
+        static const size_t MAX_PAYLOAD_SIZE =
+            sizeof(T) > INTERNAL_PAYLOAD_SIZE
+                ? sizeof(T)
+                : INTERNAL_PAYLOAD_SIZE;
+
+        static const size_t PLAIN_SIZE = 3 + MAX_PAYLOAD_SIZE + 2;
+
+        // -------------------------------------------------------------------------
         // Member Variables
         // -------------------------------------------------------------------------
         Adapter* _hw;
         T _data;
 
-        TinyStats _stats = TinyStats{};
+        TinyStats _stats;
 
-        ReceiverCallback _onReceive = nullptr;
-
-        static const size_t PLAIN_SIZE = 3 + sizeof(T) + 2;
+        ReceiverCallback _onReceive;
 
         uint8_t _pBuf[PLAIN_SIZE];
-        uint8_t _rawBuf[PLAIN_SIZE + 64];
+        // RX accumulation buffer: fixed at the protocol maximum frame size (T=64 → 73 bytes)
+        // so that structurally mismatched frames from peers with larger payloads are received
+        // in full and rejected by the size/checksum check rather than by a premature overflow.
+        static const size_t MAX_FRAME_PLAIN = 3 + 64 + 2;         // 69 bytes
+        static const size_t MAX_FRAME_ENC   = MAX_FRAME_PLAIN + 4; // 73 bytes (COBS overhead)
+        uint8_t _rawBuf[MAX_FRAME_ENC];
 
-        uint8_t _rawIdx = 0;
-        uint8_t _currType = 0;
-        uint8_t _currSeq = 0;
-        uint8_t _nextSeq = 0;
+        uint16_t _rawIdx;
+        uint8_t  _currType;
+        uint8_t  _currSeq;
+        uint8_t  _nextSeq;
 
-        bool _hasNew = false;
+        bool _hasNew;
 
-        unsigned long _lastByte = 0;
-        unsigned long _timeout = 250;
+        unsigned long _lastByte;
+        unsigned long _timeout;
 
-        TinyState _state = TinyState::WAIT_FOR_SYNC;
+        TinyState _state;
+
+        // -------------------------------------------------------------------------
+        // Non-copyable
+        // -------------------------------------------------------------------------
+        TinyLink(const TinyLink&) = delete;
+        TinyLink& operator=(const TinyLink&) = delete;
 
         // -------------------------------------------------------------------------
         // Internal Sender
         // -------------------------------------------------------------------------
-        // Packs, COBS-encodes and writes a frame without touching public sequencing
-        // (_nextSeq / _currSeq) or stats when internal=true.
+        // Packs, COBS-encodes and writes a frame using local stack buffers.
+        // Uses local (stack) buffers so it never aliases the RX accumulation
+        // buffers (_pBuf / _rawBuf), making full-duplex operation safe.
         // Returns true if the frame was handed off to the hardware layer.
         bool send_internal(uint8_t wireType, uint8_t seq, const uint8_t *payload, size_t len, bool internal) {
             if (!_hw->isOpen()) return false;
 
-            // Use local buffers sized for the maximum TinyLink payload (64 bytes).
             // Plain packet layout: [type(1)][seq(1)][len(1)][payload(0-64)][crc_lo(1)][crc_hi(1)]
-            // COBS worst-case overhead: ceil(n/254)+1 extra bytes. For n=69: 2 bytes max.
+            // COBS worst-case overhead: ceil(n/254)+1 extra bytes. For n=69: 2 bytes.
             // +4 is a conservative upper bound that keeps the buffer safely oversized.
             const size_t MAX_INTERNAL_PLAIN = 3 + 64 + 2; // 69 bytes (max payload 64 bytes)
-            const size_t MAX_INTERNAL_ENC   = MAX_INTERNAL_PLAIN + 4;  // 73 bytes (conservative COBS upper bound)
+            const size_t MAX_INTERNAL_ENC   = MAX_INTERNAL_PLAIN + 4;  // 73 bytes
             uint8_t pBuf[MAX_INTERNAL_PLAIN];
             uint8_t rawBuf[MAX_INTERNAL_ENC];
 
@@ -136,22 +166,12 @@ namespace tinylink {
             _hw->write(rawBuf, eLen);
             _hw->write(0x00);
 
-            _rawIdx = 0;
             return true;
         }
 
         // -------------------------------------------------------------------------
         // Handshake Helpers
         // -------------------------------------------------------------------------
-
-        // Send a Handshake frame and transition to CONNECTING state.
-        void startHandshake() {
-            HandshakeMessage m;
-            m.version = 0;
-            send_internal(message_type_to_wire(MessageType::Handshake),
-                          0, reinterpret_cast<const uint8_t*>(&m), sizeof(m), true);
-            _state = TinyState::CONNECTING;
-        }
 
         // Handle an incoming Handshake frame: transition state and reply with a TinyAck.
         void handleHandshakeMessage(const uint8_t *payload, size_t len) {
@@ -171,32 +191,90 @@ namespace tinylink {
                           0, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack), true);
         }
 
+        // -------------------------------------------------------------------------
+        // Private sendLog overload (raw level byte — used internally)
+        // -------------------------------------------------------------------------
+        bool sendLog(uint8_t level, uint16_t code, const char *text) {
+            return sendLog(static_cast<LogLevel>(level), code, text);
+        }
+
     public:
 
         // -------------------------------------------------------------------------
         // Constructor
         // -------------------------------------------------------------------------
-        TinyLink(Adapter& hw) : _hw(&hw) {
-            static_assert(sizeof(T) <= 64, "TinyLink: Payload exceeds 64 bytes. TinyLink is designed for micro-messages.");
-            static_assert(alignof(T) == 1, "TinyLink: Data type must be packed. Use __attribute__((packed)).");
+        explicit TinyLink(Adapter& hw)
+            : _hw(&hw),
+              _data(),
+              _stats(),
+              _onReceive(nullptr),
+              _rawIdx(0),
+              _currType(0),
+              _currSeq(0),
+              _nextSeq(0),
+              _hasNew(false),
+              _lastByte(0),
+              _timeout(250),
+              _state(TinyState::WAIT_FOR_SYNC)
+        {
+            static_assert(sizeof(T) <= 64,
+                "TinyLink: Payload exceeds 64 bytes. TinyLink is designed for micro-messages.");
+            static_assert(alignof(T) == 1,
+                "TinyLink: Data type must be packed. Use __attribute__((packed)).");
         }
 
+        // -------------------------------------------------------------------------
+        // Configuration & Control
+        // -------------------------------------------------------------------------
+
         void onReceive(ReceiverCallback cb) { _onReceive = cb; }
-        void setTimeout(unsigned long ms) { _timeout = ms; }
-        void clearStats() { _stats.clear(); }
+        void setTimeout(unsigned long ms)   { _timeout = ms; }
+        void clearStats()                   { _stats.clear(); }
 
-        bool connected() { return _hw->isOpen(); }
-        const TinyStats& getStats() { return _stats; }
+        /**
+         * @brief Initiate a connection handshake with the remote peer.
+         *
+         * Sends a Handshake ('H') frame and transitions to CONNECTING state.
+         * The peer should reply with an ACK, which drives the state to HANDSHAKING.
+         * Data exchange can proceed regardless of handshake state; the handshake
+         * is informational only and does not gate the RX path.
+         */
+        void startHandshake() {
+            HandshakeMessage m;
+            m.version = 0;
+            send_internal(message_type_to_wire(MessageType::Handshake),
+                          0, reinterpret_cast<const uint8_t*>(&m), sizeof(m), true);
+            _state = TinyState::CONNECTING;
+        }
 
-        bool available() { return _hasNew; }
-        const T& peek() { return _data; }
-        void flush() { _hasNew = false; }
+        // -------------------------------------------------------------------------
+        // Status / Telemetry
+        // -------------------------------------------------------------------------
 
-        uint8_t type() { return _currType; }
-        uint8_t seq() { return _currSeq; }
+        /** @brief Returns true if the underlying hardware port is open. */
+        bool connected() const { return _hw->isOpen(); }
 
-        uint16_t overflowErrors() const { return static_cast<uint16_t>(_stats.overflow); }
+        /** @brief Returns the current connection/handshake state. */
+        TinyState state() const { return _state; }
 
+        /** @brief Returns accumulated protocol statistics (read-only). */
+        const TinyStats& getStats() const { return _stats; }
+
+        // -------------------------------------------------------------------------
+        // Polling API
+        // -------------------------------------------------------------------------
+
+        /** @brief Returns true if a new packet has been received and not yet consumed. */
+        bool          available() const { return _hasNew; }
+        /** @brief Returns a const reference to the last received payload (zero-copy). */
+        const T&      peek()      const { return _data; }
+        /** @brief Clears the available flag so the next packet can be received. */
+        void          flush()           { _hasNew = false; }
+
+        /** @brief Returns the wire message type byte of the last received frame. */
+        uint8_t type() const { return _currType; }
+        /** @brief Returns the sequence number of the last received frame. */
+        uint8_t seq()  const { return _currSeq; }
 
         // -------------------------------------------------------------------------
         // Update: Main RX State Machine
@@ -302,63 +380,51 @@ namespace tinylink {
 
         // -------------------------------------------------------------------------
         // TX: Encode + Send Frame
+        //
+        // Uses local stack buffers so it never aliases the RX accumulation buffers
+        // (_pBuf / _rawBuf), making full-duplex use safe.
         // -------------------------------------------------------------------------
         void sendData(uint8_t type, const T& payload) {
             if (!_hw->isOpen()) return;
 
+            // Local buffers for TX encoding — do not touch the class-member RX buffers.
+            const size_t TX_PLAIN = 3 + sizeof(T) + 2;
+            const size_t TX_ENC   = TX_PLAIN + 4;
+            uint8_t pBuf[TX_PLAIN];
+            uint8_t rawBuf[TX_ENC];
+
             _currSeq = _nextSeq++;
-            size_t plainLen = tinylink::packet::pack(type, _currSeq, (const uint8_t*)&payload, sizeof(T), _pBuf, sizeof(_pBuf));
+            size_t plainLen = tinylink::packet::pack(type, _currSeq, (const uint8_t*)&payload, sizeof(T), pBuf, TX_PLAIN);
             if (plainLen == 0) { _stats.increment(TinyStatus::ERR_CRC); return; }
-            size_t eLen = tinylink::codec::cobs_encode(_pBuf, plainLen, _rawBuf, sizeof(_rawBuf));
+            size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen, rawBuf, TX_ENC);
 
             _hw->write(0x00);
-            _hw->write(_rawBuf, eLen);
+            _hw->write(rawBuf, eLen);
             _hw->write(0x00);
-
-            _rawIdx = 0;
         }
 
         // -------------------------------------------------------------------------
-        // Logging API: Send a compact log message as a Debug ('g') frame.
+        // Logging API
         //
-        // Wire payload layout: [level:1][code_lo:1][code_hi:1][text_len:1][text...]
-        // text is truncated to MAX_LOG_TEXT (48) bytes; no NUL terminator on wire.
+        // Sends a structured Debug ('g') frame using the DebugMessage wire format.
+        // The receiver can cast the payload directly to a DebugMessage struct.
+        //
+        // Wire layout: see DebugMessage — [ts:4][level:1][code:2][text:25]
+        // Text is truncated to DEBUG_TEXT_CAPACITY - 1 (24) characters.
         // -------------------------------------------------------------------------
-        static const size_t MAX_LOG_TEXT = 48;
-
         bool sendLog(LogLevel level, uint16_t code, const char *text) {
-            return sendLog(static_cast<uint8_t>(level), code, text);
-        }
-
-        bool sendLog(uint8_t level, uint16_t code, const char *text) {
             if (!_hw->isOpen()) return false;
 
-            size_t textLen = 0;
-            if (text) {
-                while (text[textLen] != '\0' && textLen < MAX_LOG_TEXT) {
-                    ++textLen;
-                }
-            }
-
-            // Assemble payload: [level:1][code_lo:1][code_hi:1][text_len:1][text...]
-            // Stack-allocates up to 52 bytes (1+2+1+MAX_LOG_TEXT). Callers on
-            // severely RAM-constrained platforms (e.g. <1 KB stack) should keep
-            // MAX_LOG_TEXT in mind or reduce it via a subclass / compile-time
-            // override.
-            uint8_t buf[1 + 2 + 1 + MAX_LOG_TEXT];
-            size_t pos = 0;
-            buf[pos++] = level;
-            buf[pos++] = static_cast<uint8_t>(code & 0xFF);
-            buf[pos++] = static_cast<uint8_t>((code >> 8) & 0xFF);
-            buf[pos++] = static_cast<uint8_t>(textLen);
-            if (textLen > 0) {
-                memcpy(buf + pos, text, textLen);
-                pos += textLen;
-            }
+            DebugMessage msg;
+            msg.ts    = static_cast<uint32_t>(_hw->millis());
+            msg.level = static_cast<uint8_t>(level);
+            msg.code  = code;
+            debugmessage_set_text(msg, text);
 
             _currSeq = _nextSeq++;
             return send_internal(message_type_to_wire(MessageType::Debug),
-                                 _currSeq, buf, pos, /*internal=*/false);
+                                 _currSeq, reinterpret_cast<const uint8_t*>(&msg), sizeof(msg),
+                                 /*internal=*/false);
         }
     };
 

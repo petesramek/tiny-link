@@ -11,15 +11,12 @@
 namespace tinylink {
 
     /**
-     * @brief Internal state stages for the TinyLink state machine.
+     * @brief Internal state stages for the TinyLink connection state machine.
      */
     enum class TinyState : uint8_t {
-        CONNECTING,      /**< Boot state — sends TYPE_STATUS, waits for peer's STATUS */
-        HANDSHAKING,     /**< STATUS received and ACK sent, waiting for ACK to our STATUS */
-        WAIT_FOR_SYNC,   /**< Connected — waiting for 0x00 frame delimiter */
-        IN_FRAME,        /**< Accumulating encoded bytes until next 0x00 */
-        FRAME_COMPLETE,  /**< Valid frame received, ready to process */
-        AWAITING_ACK     /**< Sent a packet, waiting for Ack response */
+        WAIT_FOR_SYNC,  /**< Default state — ready to receive frames (no handshake in progress) */
+        CONNECTING,     /**< startHandshake() was called — Handshake frame sent, waiting for peer's ACK */
+        HANDSHAKING,    /**< Peer's Handshake received and replied to — handshake sequence complete */
     };
 
 } // namespace tinylink

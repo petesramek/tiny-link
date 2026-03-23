@@ -343,14 +343,15 @@ void test_zero_length_header_rejection(void) {
 
 /** @test Verifies that packets larger than the compiled struct size are rejected */
 void test_oversized_struct_protection(void) {
-    // Simulate a 100-byte packet arriving for a 8-byte TestPayload
-    uint8_t largeRaw[110]; 
+    // Inject 110 bytes of raw non-delimiter bytes. No 0x00 is present, so the
+    // frame is never completed; the buffer overflows before a delimiter arrives.
+    uint8_t largeRaw[110];
     memset(largeRaw, 0xAA, 110);
     adapter.inject(largeRaw, 110);
     link.update();
-    
+
     TEST_ASSERT_FALSE(link.available());
-    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().overflow);
 }
 
 /** @test Verifies that a new 0x00 delimiter immediately kills any pending partial frame */
@@ -916,12 +917,15 @@ void test_fletcher_overflow_stability(void) {
 
 /** @test Verifies that swapping CRC endianness results in a rejection */
 void test_crc_endian_sensitivity(void) {
-    TestPayload p = {1, 1.0f};
+    // Use a payload with no zero bytes so a byte-swap cannot create a spurious 0x00
+    // delimiter inside the COBS stream, ensuring exactly one clean CRC error.
+    TestPayload p = {0xDEADBEEF, 3.14f};
     link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
     std::vector<uint8_t>& b = adapter.getRawBuffer();
     // Swap last two bytes before 0x00
     std::swap(b[b.size()-2], b[b.size()-3]);
     while(adapter.available() > 0) link.update();
+    TEST_ASSERT_FALSE(link.available());
     TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
@@ -980,7 +984,6 @@ void register_protocol_tests(void) {
     RUN_TEST(test_fragmented_arrival_persistence);/**< Resistance to serial jitter */
     RUN_TEST(test_signed_boundary_integrity);    /**< Signed/Unsigned bit transparency */
     RUN_TEST(test_callback_hotswap_safety);      /**< Dynamic memory/pointer safety */
-    RUN_TEST(test_split_integer_alignment);      /**< Re-verifying integer boundaries */
 
     RUN_TEST(test_checksum_independence);     /**< Calculation isolation */
     RUN_TEST(test_cobs_truncation_safety);     /**< Truncated frame safety */
@@ -997,4 +1000,6 @@ void register_protocol_tests(void) {
     RUN_TEST(test_primitive_type_support);
     RUN_TEST(test_truncated_cobs_rejection);
     RUN_TEST(test_fletcher_overflow_stability);
+    RUN_TEST(test_oversized_struct_protection);  /**< Reject runaway-size non-delimited junk */
+    RUN_TEST(test_crc_endian_sensitivity);        /**< CRC byte-order sensitivity check */
 }

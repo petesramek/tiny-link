@@ -10,29 +10,20 @@
 #define TINYLINK_INTERNAL_HANDSHAKEMESSAGE_H
 
 #include <stdint.h>
+#include "protocol/internal/Packed.h"
 
 namespace tinylink {
-
-#if defined(_MSC_VER)
-    #define TINYLINK_HS_PACKED_BEGIN __pragma(pack(push, 1))
-    #define TINYLINK_HS_PACKED_END   __pragma(pack(pop))
-    #define TINYLINK_HS_PACKED
-#else
-    #define TINYLINK_HS_PACKED_BEGIN
-    #define TINYLINK_HS_PACKED_END
-    #define TINYLINK_HS_PACKED __attribute__((packed))
-#endif
 
     /**
      * @brief One-byte handshake payload for MessageType::Handshake ('H') frames.
      *
      * @param version  Protocol version advertised by the sender (currently 0).
      */
-    TINYLINK_HS_PACKED_BEGIN
+    TINYLINK_PACKED_BEGIN
     struct HandshakeMessage {
         uint8_t version; /**< Protocol version (0 = initial) */
-    } TINYLINK_HS_PACKED;
-    TINYLINK_HS_PACKED_END
+    } TINYLINK_PACKED;
+    TINYLINK_PACKED_END
 
     static_assert(sizeof(HandshakeMessage) == 1, "HandshakeMessage must be exactly 1 byte");
 

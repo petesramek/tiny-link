@@ -19,10 +19,12 @@ void test_debugmessage_fields(void) {
     DebugMessage msg;
     msg.ts    = 123456;
     msg.level = 2;
+    msg.code  = 0xABCD;
     debugmessage_set_text(msg, "hello");
 
     TEST_ASSERT_EQUAL_UINT32(123456, msg.ts);
     TEST_ASSERT_EQUAL_UINT8(2, msg.level);
+    TEST_ASSERT_EQUAL_UINT16(0xABCD, msg.code);
     TEST_ASSERT_EQUAL_STRING("hello", msg.text);
 }
 
@@ -36,9 +38,9 @@ void test_debugmessage_set_text_normal(void) {
 /** @test debugmessage_set_text truncates strings longer than capacity. */
 void test_debugmessage_set_text_truncate(void) {
     DebugMessage msg;
-    // 30 chars — longer than DEBUG_TEXT_CAPACITY (27)
+    // 30 chars — longer than DEBUG_TEXT_CAPACITY (25)
     debugmessage_set_text(msg, "abcdefghijklmnopqrstuvwxyz1234");
-    // Should be truncated to DEBUG_TEXT_CAPACITY - 1 = 26 chars
+    // Should be truncated to DEBUG_TEXT_CAPACITY - 1 = 24 chars
     TEST_ASSERT_EQUAL_size_t(DEBUG_TEXT_CAPACITY - 1, strlen(msg.text));
     TEST_ASSERT_EQUAL_UINT8('\0', (uint8_t)msg.text[DEBUG_TEXT_CAPACITY - 1]);
 }
@@ -56,6 +58,7 @@ void test_debugmessage_memcpy_roundtrip(void) {
     DebugMessage original;
     original.ts    = 9999;
     original.level = 1;
+    original.code  = 0x1234;
     debugmessage_set_text(original, "ping");
 
     uint8_t buf[32];
@@ -66,6 +69,7 @@ void test_debugmessage_memcpy_roundtrip(void) {
 
     TEST_ASSERT_EQUAL_UINT32(9999, restored.ts);
     TEST_ASSERT_EQUAL_UINT8(1, restored.level);
+    TEST_ASSERT_EQUAL_UINT16(0x1234, restored.code);
     TEST_ASSERT_EQUAL_STRING("ping", restored.text);
 }
 
@@ -109,6 +113,7 @@ void test_debugmessage_ts_boundary(void) {
     DebugMessage msg;
     msg.ts    = 0xFFFFFFFF;
     msg.level = 0xFF;
+    msg.code  = 0xFFFF;
     debugmessage_set_text(msg, "max");
 
     uint8_t buf[32];
@@ -119,12 +124,39 @@ void test_debugmessage_ts_boundary(void) {
 
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFF, out.ts);
     TEST_ASSERT_EQUAL_UINT8(0xFF, out.level);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFF, out.code);
     TEST_ASSERT_EQUAL_STRING("max", out.text);
 }
 
-/** @test DEBUG_TEXT_CAPACITY constant equals 27. */
+/** @test DEBUG_TEXT_CAPACITY constant equals 25. */
 void test_debugmessage_capacity_constant(void) {
-    TEST_ASSERT_EQUAL_UINT8(27, DEBUG_TEXT_CAPACITY);
+    TEST_ASSERT_EQUAL_UINT8(25, DEBUG_TEXT_CAPACITY);
+}
+
+/** @test code field is zero-initialised independently of other fields. */
+void test_debugmessage_code_zero(void) {
+    DebugMessage msg;
+    msg.ts    = 1;
+    msg.level = 0;
+    msg.code  = 0;
+    debugmessage_set_text(msg, "ok");
+    TEST_ASSERT_EQUAL_UINT16(0, msg.code);
+}
+
+/** @test code field survives memcpy round-trip. */
+void test_debugmessage_code_roundtrip(void) {
+    DebugMessage msg;
+    msg.ts    = 0;
+    msg.level = 0;
+    msg.code  = 0xBEEF;
+    debugmessage_set_text(msg, "x");
+
+    uint8_t buf[32];
+    memcpy(buf, &msg, 32);
+
+    DebugMessage out;
+    memcpy(&out, buf, 32);
+    TEST_ASSERT_EQUAL_UINT16(0xBEEF, out.code);
 }
 
 /** @test text field is always NUL-terminated after set_text. */
@@ -151,4 +183,6 @@ void register_debugmessage_tests(void) {
     RUN_TEST(test_debugmessage_ts_boundary);
     RUN_TEST(test_debugmessage_capacity_constant);
     RUN_TEST(test_debugmessage_always_nul_terminated);
+    RUN_TEST(test_debugmessage_code_zero);
+    RUN_TEST(test_debugmessage_code_roundtrip);
 }

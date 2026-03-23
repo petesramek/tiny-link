@@ -166,12 +166,8 @@ void test_cobs_native_stress(void) {
 
 #endif // TINYLINK_NATIVE_TESTS || TINYLINK_NATIVE_TEST
 
-// ---------------------------------------------------------------------------
-// Test runner
-// ---------------------------------------------------------------------------
-int register_cobs_tests(void) {
-    UNITY_BEGIN();
-
+// Register the tests from this file. No UNITY_BEGIN()/END() here.
+void register_cobs_tests(void) {
     RUN_TEST(test_cobs_roundtrip_small);
     RUN_TEST(test_cobs_roundtrip_all_zeros);
     RUN_TEST(test_cobs_roundtrip_mixed);
@@ -186,6 +182,4 @@ int register_cobs_tests(void) {
 #if defined(TINYLINK_NATIVE_TESTS) || defined(TINYLINK_NATIVE_TEST)
     RUN_TEST(test_cobs_native_stress);
 #endif
-
-    return UNITY_END();
 }

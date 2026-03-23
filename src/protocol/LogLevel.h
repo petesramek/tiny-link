@@ -14,13 +14,14 @@ namespace tinylink {
  * @brief Severity level for log messages sent via TinyLink::sendLog().
  *
  * Values are transmitted as a single byte on the wire inside a Debug ('g') frame.
+ * Ordered from least severe (TRACE) to most severe (ERROR).
  */
 enum class LogLevel : uint8_t {
-    DEBUG = 0, /**< Verbose diagnostic output */
-    INFO  = 1, /**< Informational message */
-    WARN  = 2, /**< Warning condition */
-    ERROR = 3, /**< Error condition */
-    TRACE = 4  /**< Fine-grained trace output */
+    TRACE = 0, /**< Fine-grained trace output (least severe) */
+    DEBUG = 1, /**< Verbose diagnostic output */
+    INFO  = 2, /**< Informational message */
+    WARN  = 3, /**< Warning condition */
+    ERROR = 4  /**< Error condition (most severe) */
 };
 
 } // namespace tinylink
