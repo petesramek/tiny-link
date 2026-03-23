@@ -257,6 +257,81 @@ void test_auto_update_isr_drives_engine(void) {
         "autoUpdateISR must drive the engine exactly like update()");
 }
 
+/**
+ * @brief TEST: autoUpdateISR works without any prior enableAutoUpdate() call.
+ *
+ * The constructor auto-registers the instance, so attaching autoUpdateISR()
+ * to any interrupt source must work immediately after construction — no
+ * extra setup step is required.
+ */
+void test_auto_update_isr_works_without_enable_call(void) {
+    static int noEnable_callCount;
+    noEnable_callCount = 0;
+
+    // Use a fresh pair so the auto-registration from construction is the only
+    // registration — no enableAutoUpdate() is called anywhere below.
+    static LoopbackAdapter freshAdapter;
+    static tinylink::TinyLink<TestPayload, LoopbackAdapter> freshLink(freshAdapter);
+    freshLink.reset();
+    freshAdapter.getRawBuffer().clear();
+
+    freshLink.onDataReceived([](const TestPayload&) { noEnable_callCount++; });
+
+    TestPayload p = { 77, 7.7f };
+    freshLink.sendData(static_cast<uint8_t>(MessageType::Data), p);
+
+    // Drive via ISR without having called enableAutoUpdate().
+    while (freshAdapter.available() > 0) {
+        tinylink::TinyLink<TestPayload, LoopbackAdapter>::autoUpdateISR();
+    }
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, noEnable_callCount,
+        "autoUpdateISR must work without calling enableAutoUpdate() first");
+}
+
+/**
+ * @brief TEST: enableAutoUpdate() re-registers a different instance for ISR dispatch.
+ *
+ * When two instances of the same <T,Adapter> type exist, the last-constructed
+ * one is registered by default.  enableAutoUpdate() on the first instance
+ * must switch ISR dispatch back to it.
+ */
+void test_enable_auto_update_switches_instance(void) {
+    static int countA, countB;
+    countA = 0;
+    countB = 0;
+
+    static LoopbackAdapter adA, adB;
+    // instA is constructed first; instB last → instB is the default ISR target.
+    static tinylink::TinyLink<TestPayload, LoopbackAdapter> instA(adA);
+    static tinylink::TinyLink<TestPayload, LoopbackAdapter> instB(adB);
+    instA.reset(); adA.getRawBuffer().clear();
+    instB.reset(); adB.getRawBuffer().clear();
+
+    instA.onDataReceived([](const TestPayload&) { countA++; });
+    instB.onDataReceived([](const TestPayload&) { countB++; });
+
+    // instB is the default ISR target after construction.
+    TestPayload p = { 1, 1.0f };
+    instB.sendData(static_cast<uint8_t>(MessageType::Data), p);
+    while (adB.available() > 0) {
+        tinylink::TinyLink<TestPayload, LoopbackAdapter>::autoUpdateISR();
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, countB,
+        "Default ISR target must be last-constructed instance");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, countA,
+        "Non-default instance must not receive ISR-driven updates");
+
+    // Explicitly switch to instA.
+    instA.enableAutoUpdate();
+    instA.sendData(static_cast<uint8_t>(MessageType::Data), p);
+    while (adA.available() > 0) {
+        tinylink::TinyLink<TestPayload, LoopbackAdapter>::autoUpdateISR();
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, countA,
+        "After enableAutoUpdate(), ISR must drive the newly registered instance");
+}
+
 void register_callback_tests(void) {
     RUN_TEST(test_callback_receives_multiple_frames);
     RUN_TEST(test_callback_mode_does_not_set_available);
@@ -266,4 +341,6 @@ void register_callback_tests(void) {
     RUN_TEST(test_on_handshake_received_fires);
     RUN_TEST(test_on_ack_received_fires);
     RUN_TEST(test_auto_update_isr_drives_engine);
+    RUN_TEST(test_auto_update_isr_works_without_enable_call);
+    RUN_TEST(test_enable_auto_update_switches_instance);
 }

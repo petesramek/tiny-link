@@ -148,6 +148,63 @@ void loop() {
 **Use Callbacks** if you want to keep your communication logic completely separated from your application logic. This is highly recommended as it makes the `TinyLink` engine more reactive.
 
 
+## 🔄 Auto-Update Modes
+
+TinyLink's protocol engine must be called periodically to process incoming bytes,
+manage timeouts, and fire callbacks.  There are **three supported ways** to drive
+it — choose the one that fits your hardware and application:
+
+| | Mode 1 — Main Loop | Mode 2 — Timer ISR | Mode 3 — serialEvent() |
+|---|---|---|---|
+| **How** | `link.update()` in `loop()` | `autoUpdateISR()` on a hardware timer | `autoUpdateISR()` from `serialEvent()` |
+| **Hardware interrupt?** | ❌ No | ✅ Timer required | ❌ No |
+| **Extra setup call?** | None | Timer init + `attachInterrupt` | None |
+| **`enableAutoUpdate()`?** | Not needed | Not needed | Not needed |
+| **Works if loop() blocks?** | ❌ No | ✅ Yes | ❌ No |
+| **Best for** | Any board, simplest code | Deterministic, busy loops | No-timer boards, reactive RX |
+
+### Mode 1 — Main Loop (default, works everywhere)
+
+```cpp
+void loop() {
+    link.update();  // ← only required call; works on every board
+}
+```
+
+### Mode 2 — Timer ISR (deterministic, interrupt-driven)
+
+The constructor auto-registers the instance — no `enableAutoUpdate()` needed.
+
+```cpp
+#include <TimerOne.h>
+
+void setup() {
+    Timer1.initialize(1000);  // 1 ms
+    Timer1.attachInterrupt(TinyLink<MyData, TinyArduinoAdapter>::autoUpdateISR);
+    // No enableAutoUpdate() call required.
+}
+// loop() does not need to call update() at all.
+```
+
+### Mode 3 — serialEvent() (zero-setup, no timer needed)
+
+Arduino calls `serialEvent()` automatically between `loop()` iterations when
+Serial bytes are waiting — no library or interrupt configuration required.
+
+```cpp
+void serialEvent() {
+    TinyLink<MyData, TinyArduinoAdapter>::autoUpdateISR();
+}
+// setup() and loop() have no TinyLink maintenance calls.
+```
+
+> **Multi-instance note:** When you have two `TinyLink<T,Adapter>` objects of
+> the same type, the last-constructed one is the default ISR target.  Call
+> `link.enableAutoUpdate()` on the desired instance to override.
+
+See `examples/Auto_Update/` for all three modes with a full side-by-side comparison.
+
+
 ## 📊 Performance & Telemetry
 
 Monitor link health in real-time to diagnose wiring issues:
