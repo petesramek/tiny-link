@@ -6,11 +6,14 @@
 #ifndef TINY_LINK_H
 #define TINY_LINK_H
 
-#include "TinyProtocol.h"
+#include "protocol/MessageType.h"
+#include "protocol/Status.h"
+#include "protocol/State.h"
+#include "protocol/Stats.h"
 #include "internal/codec/CobsCodec.h"
 #include "internal/codec/Fletcher16.h"
 #include "internal/codec/Packet.h"
-#include "version.h"
+#include "Version.h"
 #include "internal/protocol/AckMessage.h"
 #include "internal/protocol/LogMessage.h"
 #include "internal/protocol/HandshakeMessage.h"

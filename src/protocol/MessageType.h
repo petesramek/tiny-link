@@ -12,7 +12,6 @@ namespace tinylink {
         Log       = 'L',      /**< Log / diagnostic payload frame */
         Cmd       = 'C',      /**< Command frame (renamed from Req/'R') */
         Ack       = 'A',      /**< Combined ACK/NACK — carries a TinyStatus code */
-        Done      = 'K',      /**< Done / end-of-session frame */
         Handshake = 'H'       /**< Handshake frame — sent at startup to establish a connection */
     };
 
