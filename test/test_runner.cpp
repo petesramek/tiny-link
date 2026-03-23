@@ -13,6 +13,7 @@ void register_logmessage_tests(void);
 void register_message_type_tests(void);
 void register_status_tests(void);
 void register_handshake_tests(void);
+void register_duplex_tests(void);
 
 /** @brief Reset the state machine and virtual clock before every test case */
 void setUp(void) {
@@ -43,6 +44,7 @@ int main(int argc, char** argv) {
     register_message_type_tests();
     register_status_tests();
     register_handshake_tests();
+    register_duplex_tests();
 
     return UNITY_END();
 }
