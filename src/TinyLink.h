@@ -25,54 +25,37 @@
 namespace tinylink {
 
 #ifndef __AVR__
-    // -----------------------------------------------------------------------------
-    //  SFINAE Adapter Validation (C++11/14 compatible, non-AVR only)
-    // -----------------------------------------------------------------------------
-    //
-    // avr-gcc does not ship <type_traits>, so this block is skipped on AVR targets.
-    // On desktop/ESP builds, this enforces the adapter contract at compile time.
-    // std::declval<T>() is used so the adapter need not be default-constructible.
-    //
+    // -------------------------------------------------------------------------
+    //  SFINAE Adapter Validation (C++11/14, non-AVR only)
+    // -------------------------------------------------------------------------
     template <typename A>
     struct is_valid_adapter {
     private:
-        template <typename T>
+        template <typename U>
         static auto check(int) -> decltype(
-            (void) static_cast<bool>(std::declval<T>().isOpen()),
-            (void) static_cast<int>(std::declval<T>().available()),
-            (void) static_cast<int>(std::declval<T>().read()),
-            (void)std::declval<T>().write(uint8_t(0)),
-            (void)std::declval<T>().write((const uint8_t*)0, size_t(0)),
-            (void) static_cast<unsigned long>(std::declval<T>().millis()),
+            (void) static_cast<bool>(std::declval<U>().isOpen()),
+            (void) static_cast<int>(std::declval<U>().available()),
+            (void) static_cast<int>(std::declval<U>().read()),
+            (void)std::declval<U>().write(uint8_t(0)),
+            (void)std::declval<U>().write((const uint8_t*)0, size_t(0)),
+            (void) static_cast<unsigned long>(std::declval<U>().millis()),
             std::true_type{}
-            );
-
+        );
         template <typename>
         static std::false_type check(...);
-
     public:
         static constexpr bool value = decltype(check<A>(0))::value;
     };
-
     template <typename A>
     using adapter_check_t = typename std::enable_if<is_valid_adapter<A>::value, int>::type;
-
 #else
-    // -----------------------------------------------------------------------------
-    //  AVR: No SFINAE validation (avr-gcc has no <type_traits>)
-    // -----------------------------------------------------------------------------
-    //
-    // On AVR targets the adapter contract is trusted to be correct by the user.
-    // The template parameter is preserved for API compatibility.
-    //
     template <typename A>
     using adapter_check_t = int;
-
 #endif
 
-    // -----------------------------------------------------------------------------
-    //  TinyLink Engine Template
-    // -----------------------------------------------------------------------------
+    // =========================================================================
+    //  TinyLink Engine
+    // =========================================================================
 
     template <typename T, typename Adapter, adapter_check_t<Adapter> = 0>
     class TinyLink {
@@ -81,338 +64,479 @@ namespace tinylink {
 
     private:
 
-        // -------------------------------------------------------------------------
-        // Buffer sizing
+        // ---- Buffer sizing --------------------------------------------------
         //
-        // _pBuf must be large enough to hold the decoded plain-text of both user
-        // frames (3 + sizeof(T) + 2) and internal protocol frames (TinyAck,
-        // HandshakeMessage).  We take the maximum across all three so that the
-        // same buffer can safely receive any frame type regardless of T's size.
-        // -------------------------------------------------------------------------
+        // _pBuf must hold the largest plain-text frame we will ever decode:
+        //   user data    : 3 + sizeof(T) + 2
+        //   internal ACK : 3 + sizeof(TinyAck=2) + 2  = 7
+        //   Handshake    : 3 + sizeof(HandshakeMessage=1) + 2 = 6
+        //
         static const size_t INTERNAL_PAYLOAD_SIZE =
             sizeof(TinyAck) > sizeof(HandshakeMessage)
-                ? sizeof(TinyAck)
-                : sizeof(HandshakeMessage);
-
+                ? sizeof(TinyAck) : sizeof(HandshakeMessage);
         static const size_t MAX_PAYLOAD_SIZE =
             sizeof(T) > INTERNAL_PAYLOAD_SIZE
-                ? sizeof(T)
-                : INTERNAL_PAYLOAD_SIZE;
-
+                ? sizeof(T) : INTERNAL_PAYLOAD_SIZE;
         static const size_t PLAIN_SIZE = 3 + MAX_PAYLOAD_SIZE + 2;
 
-        // -------------------------------------------------------------------------
-        // Member Variables
-        // -------------------------------------------------------------------------
-        Adapter* _hw;
-        T _data;
+        // RX accumulation buffer: fixed at the protocol maximum (T=64 → 73 B)
+        // so mismatched-size frames are rejected by CRC, not premature overflow.
+        static const size_t MAX_FRAME_PLAIN = 3 + 64 + 2;          // 69 B
+        static const size_t MAX_FRAME_ENC   = MAX_FRAME_PLAIN + 4;  // 73 B
 
-        TinyStats _stats;
+        // Interval between Handshake retries while in CONNECTING.
+        static const unsigned long HANDSHAKE_RETRY_MS = 1000;
 
-        ReceiverCallback _onReceive;
+        // ---- Members --------------------------------------------------------
+        Adapter*          _hw;
+        T                 _data;
+        TinyStats         _stats;
+        ReceiverCallback  _onReceive;
 
-        uint8_t _pBuf[PLAIN_SIZE];
-        // RX accumulation buffer: fixed at the protocol maximum frame size (T=64 → 73 bytes)
-        // so that structurally mismatched frames from peers with larger payloads are received
-        // in full and rejected by the size/checksum check rather than by a premature overflow.
-        static const size_t MAX_FRAME_PLAIN = 3 + 64 + 2;         // 69 bytes
-        static const size_t MAX_FRAME_ENC   = MAX_FRAME_PLAIN + 4; // 73 bytes (COBS overhead)
-        uint8_t _rawBuf[MAX_FRAME_ENC];
-
+        uint8_t  _pBuf[PLAIN_SIZE];
+        uint8_t  _rawBuf[MAX_FRAME_ENC];
         uint16_t _rawIdx;
-        uint8_t  _currType;
-        uint8_t  _currSeq;
-        uint8_t  _nextSeq;
 
-        bool _hasNew;
-
+        uint8_t       _currType;
+        uint8_t       _currSeq;
+        uint8_t       _nextSeq;
+        bool          _hasNew;
         unsigned long _lastByte;
         unsigned long _timeout;
 
-        TinyState _state;
+        TinyState     _state;
+        bool          _handshakeEnabled;
+        unsigned long _lastHandshakeSent;
+        unsigned long _lastSent;          // timestamp of last sendData(), for AWAITING_ACK timeout
 
-        // -------------------------------------------------------------------------
-        // Non-copyable
-        // -------------------------------------------------------------------------
+        // ---- Non-copyable ---------------------------------------------------
         TinyLink(const TinyLink&) = delete;
         TinyLink& operator=(const TinyLink&) = delete;
 
-        // -------------------------------------------------------------------------
-        // Internal Sender
-        // -------------------------------------------------------------------------
-        // Packs, COBS-encodes and writes a frame using local stack buffers.
-        // Uses local (stack) buffers so it never aliases the RX accumulation
-        // buffers (_pBuf / _rawBuf), making full-duplex operation safe.
-        // Returns true if the frame was handed off to the hardware layer.
-        bool send_internal(uint8_t wireType, uint8_t seq, const uint8_t *payload, size_t len, bool internal) {
+        // ---- Internal frame sender ------------------------------------------
+        //
+        // Uses local (stack) buffers — never aliases the RX buffers, making
+        // full-duplex operation safe.
+        //
+        bool send_internal(uint8_t wireType, uint8_t seq,
+                           const uint8_t* payload, size_t len, bool isInternal) {
             if (!_hw->isOpen()) return false;
 
-            // Plain packet layout: [type(1)][seq(1)][len(1)][payload(0-64)][crc_lo(1)][crc_hi(1)]
-            // COBS worst-case overhead: ceil(n/254)+1 extra bytes. For n=69: 2 bytes.
-            // +4 is a conservative upper bound that keeps the buffer safely oversized.
-            const size_t MAX_INTERNAL_PLAIN = 3 + 64 + 2; // 69 bytes (max payload 64 bytes)
-            const size_t MAX_INTERNAL_ENC   = MAX_INTERNAL_PLAIN + 4;  // 73 bytes
-            uint8_t pBuf[MAX_INTERNAL_PLAIN];
-            uint8_t rawBuf[MAX_INTERNAL_ENC];
+            const size_t MAX_PLAIN = 3 + 64 + 2;
+            const size_t MAX_ENC   = MAX_PLAIN + 4;
+            uint8_t pBuf[MAX_PLAIN];
+            uint8_t rawBuf[MAX_ENC];
 
-            size_t plainLen = tinylink::packet::pack(wireType, seq, payload, len, pBuf, MAX_INTERNAL_PLAIN);
+            size_t plainLen = tinylink::packet::pack(wireType, seq, payload, len,
+                                                     pBuf, MAX_PLAIN);
             if (plainLen == 0) {
-                if (!internal) _stats.increment(TinyStatus::ERR_CRC);
+                if (!isInternal) _stats.increment(TinyStatus::ERR_CRC);
                 return false;
             }
-            size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen, rawBuf, MAX_INTERNAL_ENC);
-
+            size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen,
+                                                       rawBuf, MAX_ENC);
             _hw->write(0x00);
             _hw->write(rawBuf, eLen);
             _hw->write(0x00);
-
             return true;
         }
 
-        // -------------------------------------------------------------------------
-        // Handshake Helpers
-        // -------------------------------------------------------------------------
-
-        // Handle an incoming Handshake frame: transition state and reply with a TinyAck.
-        void handleHandshakeMessage(const uint8_t *payload, size_t len) {
+        // ---- Handshake handler (symmetric two-frame exchange) ---------------
+        //
+        // The HandshakeMessage::version byte distinguishes the two frame kinds:
+        //   version = 0  →  initial HS  (connection request, sent by begin())
+        //   version = 1  →  HS reply    (acknowledgement, sent in response)
+        //
+        // Rules:
+        //   Receive HS(v=0) from peer
+        //     → always send HS(v=1) back (helps peer connect / reconnect)
+        //     → if we were CONNECTING, the reply from us signals readiness
+        //        and we advance to WAIT_FOR_SYNC
+        //
+        //   Receive HS(v=1) from peer
+        //     → if we were CONNECTING, peer acknowledged our initial HS
+        //        → advance to WAIT_FOR_SYNC (no further reply needed)
+        //     → if already connected, ignore (stale reply, no ping-pong)
+        //
+        // This eliminates the need for a HANDSHAKING intermediate state.
+        //
+        // handleHandshakeMessage receives priorState (the state before we
+        // entered FRAME_COMPLETE) so it can make correct transitions
+        // regardless of the fact that _state is FRAME_COMPLETE at call time.
+        void handleHandshakeMessage(const uint8_t* payload, size_t len,
+                                    TinyState fromState) {
             if (len < sizeof(HandshakeMessage)) return;
 
-            HandshakeMessage h;
-            memcpy(&h, payload, sizeof(h));
+            HandshakeMessage m;
+            memcpy(&m, payload, sizeof(m));
 
-            if (_state != TinyState::WAIT_FOR_SYNC) {
-                _state = TinyState::HANDSHAKING;
+            if (m.version == 0) {
+                // Initial connection request: reply with HS(v=1).
+                HandshakeMessage reply;
+                reply.version = 1;
+                send_internal(message_type_to_wire(MessageType::Handshake), 0,
+                              reinterpret_cast<const uint8_t*>(&reply),
+                              sizeof(reply), /*isInternal=*/true);
+
+                // If we were waiting to connect, the reply signals readiness.
+                if (fromState == TinyState::CONNECTING) {
+                    _state = TinyState::WAIT_FOR_SYNC;
+                } else {
+                    // Peer joined or rebooted — restore appropriate idle state.
+                    _state = (fromState == TinyState::AWAITING_ACK)
+                             ? TinyState::AWAITING_ACK
+                             : TinyState::WAIT_FOR_SYNC;
+                }
+
+            } else {
+                // HS reply (v=1): peer acknowledged our begin().
+                if (fromState == TinyState::CONNECTING) {
+                    _state = TinyState::WAIT_FOR_SYNC;
+                } else {
+                    // Already connected — ignore to prevent ping-pong.
+                    _state = (fromState == TinyState::AWAITING_ACK)
+                             ? TinyState::AWAITING_ACK
+                             : TinyState::WAIT_FOR_SYNC;
+                }
             }
-
-            TinyAck ack;
-            ack.seq    = 0;
-            ack.result = TinyStatus::STATUS_OK;
-            send_internal(message_type_to_wire(MessageType::Ack),
-                          0, reinterpret_cast<const uint8_t*>(&ack), sizeof(ack), true);
         }
 
-        // -------------------------------------------------------------------------
-        // Private sendLog overload (raw level byte — used internally)
-        // -------------------------------------------------------------------------
-        bool sendLog(uint8_t level, uint16_t code, const char *text) {
+        // Private raw-level sendLog (delegates to the typed overload).
+        bool sendLog(uint8_t level, uint16_t code, const char* text) {
             return sendLog(static_cast<LogLevel>(level), code, text);
         }
 
     public:
 
-        // -------------------------------------------------------------------------
-        // Constructor
-        // -------------------------------------------------------------------------
+        // ---- Constructor ----------------------------------------------------
         explicit TinyLink(Adapter& hw)
-            : _hw(&hw),
-              _data(),
-              _stats(),
-              _onReceive(nullptr),
-              _rawIdx(0),
-              _currType(0),
-              _currSeq(0),
-              _nextSeq(0),
-              _hasNew(false),
-              _lastByte(0),
-              _timeout(250),
-              _state(TinyState::WAIT_FOR_SYNC)
+            : _hw(&hw), _data(), _stats(), _onReceive(nullptr),
+              _rawIdx(0), _currType(0), _currSeq(0), _nextSeq(0),
+              _hasNew(false), _lastByte(0), _timeout(250),
+              _state(TinyState::WAIT_FOR_SYNC),
+              _handshakeEnabled(false), _lastHandshakeSent(0), _lastSent(0)
         {
             static_assert(sizeof(T) <= 64,
-                "TinyLink: Payload exceeds 64 bytes. TinyLink is designed for micro-messages.");
+                "TinyLink: Payload exceeds 64 bytes. "
+                "TinyLink is designed for micro-messages.");
             static_assert(alignof(T) == 1,
-                "TinyLink: Data type must be packed. Use __attribute__((packed)).");
+                "TinyLink: Data type must be packed. "
+                "Use __attribute__((packed)).");
         }
 
-        // -------------------------------------------------------------------------
-        // Configuration & Control
-        // -------------------------------------------------------------------------
+        // ---- Configuration --------------------------------------------------
 
         void onReceive(ReceiverCallback cb) { _onReceive = cb; }
         void setTimeout(unsigned long ms)   { _timeout = ms; }
-        void clearStats()                   { _stats.clear(); }
 
         /**
-         * @brief Initiate a connection handshake with the remote peer.
+         * @brief Initiate the link and start the handshake exchange.
          *
-         * Sends a Handshake ('H') frame and transitions to CONNECTING state.
-         * The peer should reply with an ACK, which drives the state to HANDSHAKING.
-         * Data exchange can proceed regardless of handshake state; the handshake
-         * is informational only and does not gate the RX path.
+         * Sends an initial Handshake frame (version=0) and transitions to
+         * CONNECTING.  While CONNECTING the engine periodically re-sends the
+         * Handshake (every HANDSHAKE_RETRY_MS = 1 s) until the peer replies.
+         *
+         * Handshake exchange (two frames, no intermediate state):
+         *   1. begin()  →  sends HS(v=0)   →  state = CONNECTING
+         *   2. Peer receives HS(v=0)  →  sends HS(v=1)  →  peer = WAIT_FOR_SYNC
+         *   3. We receive HS(v=1)     →  state = WAIT_FOR_SYNC  (link ready)
+         *
+         * If both sides call begin() concurrently (common embedded scenario):
+         *   Each side receives the other's HS(v=0), replies with HS(v=1),
+         *   and advances to WAIT_FOR_SYNC — both connected in two round-trips.
+         *
+         * Data frames (sendData) are blocked until connected() returns true.
+         * Calling begin() again re-initiates the handshake from CONNECTING.
          */
-        void startHandshake() {
+        void begin() {
+            if (!_hw->isOpen()) return;
+            _handshakeEnabled = true;
+            _state            = TinyState::CONNECTING;
+            _lastHandshakeSent = _hw->millis();
             HandshakeMessage m;
             m.version = 0;
-            send_internal(message_type_to_wire(MessageType::Handshake),
-                          0, reinterpret_cast<const uint8_t*>(&m), sizeof(m), true);
-            _state = TinyState::CONNECTING;
+            send_internal(message_type_to_wire(MessageType::Handshake), 0,
+                          reinterpret_cast<const uint8_t*>(&m), sizeof(m),
+                          /*isInternal=*/true);
         }
 
-        // -------------------------------------------------------------------------
-        // Status / Telemetry
-        // -------------------------------------------------------------------------
+        /**
+         * @brief Reset the protocol engine to its default state.
+         *
+         * Clears all counters, flags, and state without touching the hardware
+         * adapter.  Does NOT re-initiate the handshake — call begin() for that.
+         */
+        void reset() {
+            _handshakeEnabled  = false;
+            _state             = TinyState::WAIT_FOR_SYNC;
+            _rawIdx            = 0;
+            _hasNew            = false;
+            _currType          = 0;
+            _currSeq           = 0;
+            _nextSeq           = 0;
+            _lastByte          = 0;
+            _lastHandshakeSent = 0;
+            _lastSent          = 0;
+            _stats.clear();
+            _onReceive         = nullptr;
+        }
 
-        /** @brief Returns true if the underlying hardware port is open. */
-        bool connected() const { return _hw->isOpen(); }
+        /** @brief Clears all protocol statistics counters. */
+        void clearStats() { _stats.clear(); }
 
-        /** @brief Returns the current connection/handshake state. */
-        TinyState state() const { return _state; }
+        // ---- Status ---------------------------------------------------------
 
-        /** @brief Returns accumulated protocol statistics (read-only). */
+        /**
+         * @brief True when the link is ready to exchange data frames.
+         *
+         * Basic mode (begin() never called): true as long as the hardware
+         * port is open.
+         *
+         * Handshake mode (after begin()): true only once CONNECTING has
+         * resolved to WAIT_FOR_SYNC or a data-phase state.
+         */
+        bool connected() const {
+            if (!_hw->isOpen()) return false;
+            if (!_handshakeEnabled) return true;
+            return _state != TinyState::CONNECTING;
+        }
+
+        /** @brief Current state machine stage. */
+        TinyState        state()    const { return _state; }
+
+        /** @brief Accumulated protocol statistics (read-only). */
         const TinyStats& getStats() const { return _stats; }
 
-        // -------------------------------------------------------------------------
-        // Polling API
-        // -------------------------------------------------------------------------
+        // ---- Polling API ----------------------------------------------------
 
-        /** @brief Returns true if a new packet has been received and not yet consumed. */
-        bool          available() const { return _hasNew; }
-        /** @brief Returns a const reference to the last received payload (zero-copy). */
-        const T&      peek()      const { return _data; }
-        /** @brief Clears the available flag so the next packet can be received. */
-        void          flush()           { _hasNew = false; }
+        /** @brief True when a user data frame has been received and not consumed. */
+        bool     available() const { return _hasNew; }
+        /** @brief Zero-copy access to the last received payload. */
+        const T& peek()      const { return _data; }
+        /** @brief Clears the 'available' flag; call after reading peek(). */
+        void     flush()           { _hasNew = false; }
 
-        /** @brief Returns the wire message type byte of the last received frame. */
+        /** @brief Wire message-type byte of the most recently received frame. */
         uint8_t type() const { return _currType; }
-        /** @brief Returns the sequence number of the last received frame. */
+        /** @brief Sequence number of the most recently received frame. */
         uint8_t seq()  const { return _currSeq; }
 
-        // -------------------------------------------------------------------------
-        // Update: Main RX State Machine
-        // -------------------------------------------------------------------------
+        // ---- update() — Main RX / State-Machine Driver ----------------------
+        //
+        // Call as often as possible from the main loop (or a timer ISR-safe
+        // context).  Reads all bytes available from the adapter, drives the
+        // RX state machine, and dispatches complete frames.
+        //
         void update() {
-            if (!_hw->isOpen() || _hasNew)
-                return;
+            if (!_hw->isOpen() || _hasNew) return;
 
-            if (_rawIdx > 0 && (_hw->millis() - _lastByte > _timeout)) {
-                _rawIdx = 0;
-                _stats.increment(TinyStatus::ERR_TIMEOUT);
+            unsigned long now = _hw->millis();
+
+            // Periodic Handshake re-send while awaiting the peer.
+            if (_handshakeEnabled && _state == TinyState::CONNECTING) {
+                if (now - _lastHandshakeSent >= HANDSHAKE_RETRY_MS) {
+                    _lastHandshakeSent = now;
+                    HandshakeMessage m; m.version = 0;
+                    send_internal(message_type_to_wire(MessageType::Handshake),
+                                  0, reinterpret_cast<const uint8_t*>(&m),
+                                  sizeof(m), true);
+                }
             }
 
-            while (_hw->available() > 0) {
+            // Inter-byte timeout: discard a stalled partial frame.
+            if (_rawIdx > 0 && (now - _lastByte > _timeout)) {
+                _rawIdx = 0;
+                _stats.increment(TinyStatus::ERR_TIMEOUT);
+                if (_state == TinyState::IN_FRAME) {
+                    _state = TinyState::WAIT_FOR_SYNC;
+                }
+                // CONNECTING / AWAITING_ACK: partial frame discarded, but the
+                // connection-phase state is preserved.
+            }
 
+            // ACK timeout: no Ack received within the allowed window.
+            if (_handshakeEnabled &&
+                    _state == TinyState::AWAITING_ACK && _rawIdx == 0) {
+                if (now - _lastSent > _timeout) {
+                    _stats.increment(TinyStatus::ERR_TIMEOUT);
+                    _state = TinyState::WAIT_FOR_SYNC;
+                }
+            }
+
+            // -----------------------------------------------------------------
+            // Byte-level receive loop
+            // -----------------------------------------------------------------
+            while (_hw->available() > 0) {
                 int incoming = _hw->read();
                 if (incoming < 0) break;
 
-                uint8_t c = (uint8_t)incoming;
+                uint8_t c = static_cast<uint8_t>(incoming);
                 _lastByte = _hw->millis();
 
-                // -------------------------------------------------------------
-                // Frame delimiter detected (COBS frame boundary)
-                // -------------------------------------------------------------
+                // ----------------------------------------------------------
+                // 0x00 — COBS frame delimiter
+                // ----------------------------------------------------------
                 if (c == 0x00) {
                     if (_rawIdx >= 5) {
-                        size_t dLen = tinylink::codec::cobs_decode(_rawBuf, _rawIdx, _pBuf, sizeof(_pBuf));
+                        TinyState priorState = _state;
+                        _state = TinyState::FRAME_COMPLETE;
 
-                        // ---------------------------------------------------------
-                        // Internal dispatch: Handshake and handshake-confirmation ACK
-                        // These frames are consumed before the public handler so they
-                        // do not affect public stats or the user-visible data stream.
-                        // ---------------------------------------------------------
+                        size_t dLen = tinylink::codec::cobs_decode(
+                            _rawBuf, _rawIdx, _pBuf, sizeof(_pBuf));
+                        _rawIdx = 0;
+
+                        // ---- Internal protocol frames ----
                         if (dLen >= 6) {
                             uint8_t wireType = _pBuf[0];
 
-                            // Handshake frame: handle internally and reply with ACK.
-                            if (wireType == message_type_to_wire(MessageType::Handshake)) {
+                            // Handshake: always handled internally.
+                            if (wireType ==
+                                    message_type_to_wire(MessageType::Handshake)) {
                                 uint8_t hsBuf[sizeof(HandshakeMessage)];
                                 uint8_t rtype = 0, rseq = 0;
-                                size_t hsLen = tinylink::packet::unpack(_pBuf, dLen, &rtype, &rseq,
-                                                                        hsBuf, sizeof(hsBuf));
+                                size_t hsLen = tinylink::packet::unpack(
+                                    _pBuf, dLen, &rtype, &rseq,
+                                    hsBuf, sizeof(hsBuf));
                                 if (hsLen == sizeof(HandshakeMessage)) {
-                                    handleHandshakeMessage(hsBuf, hsLen);
+                                    handleHandshakeMessage(hsBuf, hsLen,
+                                                           priorState);
+                                } else {
+                                    // Malformed HS — restore to idle state.
+                                    _state = (priorState == TinyState::CONNECTING ||
+                                              priorState == TinyState::AWAITING_ACK)
+                                             ? priorState
+                                             : TinyState::WAIT_FOR_SYNC;
                                 }
-                                _rawIdx = 0;
                                 continue;
                             }
 
-                            // Handshake-confirmation ACK: consume if we are in CONNECTING state.
-                            if (wireType == message_type_to_wire(MessageType::Ack)
-                                    && _state == TinyState::CONNECTING) {
+                            // Ack: consumed when we are AWAITING_ACK.
+                            if (wireType ==
+                                    message_type_to_wire(MessageType::Ack) &&
+                                    priorState == TinyState::AWAITING_ACK) {
                                 uint8_t ackBuf[sizeof(TinyAck)];
                                 uint8_t rtype = 0, rseq = 0;
-                                size_t ackLen = tinylink::packet::unpack(_pBuf, dLen, &rtype, &rseq,
-                                                                         ackBuf, sizeof(ackBuf));
+                                size_t ackLen = tinylink::packet::unpack(
+                                    _pBuf, dLen, &rtype, &rseq,
+                                    ackBuf, sizeof(ackBuf));
                                 if (ackLen == sizeof(TinyAck)) {
-                                    TinyAck ack;
-                                    memcpy(&ack, ackBuf, sizeof(ack));
-                                    if (ack.result == TinyStatus::STATUS_OK) {
-                                        _state = TinyState::WAIT_FOR_SYNC;
-                                        _rawIdx = 0;
-                                        continue;
-                                    }
+                                    _state = TinyState::WAIT_FOR_SYNC;
+                                } else {
+                                    _stats.increment(TinyStatus::ERR_CRC);
+                                    _state = priorState;
                                 }
+                                continue;
                             }
                         }
 
+                        // ---- User data frame dispatch ----
                         {
                             uint8_t rtype = 0, rseq = 0;
-                            size_t payloadLen = tinylink::packet::unpack(_pBuf, dLen, &rtype, &rseq, (uint8_t*)&_data, sizeof(T));
+                            size_t payloadLen = tinylink::packet::unpack(
+                                _pBuf, dLen, &rtype, &rseq,
+                                reinterpret_cast<uint8_t*>(&_data), sizeof(T));
+
                             if (payloadLen == sizeof(T)) {
                                 _currType = rtype;
-                                _currSeq = rseq;
+                                _currSeq  = rseq;
                                 _stats.increment(TinyStatus::STATUS_OK);
-                                _rawIdx = 0;
-                                if (_onReceive) { _onReceive(_data); } else { _hasNew = true; }
-                                return;
+
+                                // The post-dispatch idle state.
+                                TinyState nextState =
+                                    (priorState == TinyState::AWAITING_ACK)
+                                    ? TinyState::AWAITING_ACK
+                                    : TinyState::WAIT_FOR_SYNC;
+
+                                if (_onReceive) {
+                                    // Callback fires while state is FRAME_COMPLETE
+                                    // so it can observe the dispatch moment.
+                                    _onReceive(_data);
+                                    _state = nextState;
+                                } else {
+                                    // Polling: transition first, then signal.
+                                    _state  = nextState;
+                                    _hasNew = true;
+                                }
+                                return; // yield until caller calls flush()
                             } else {
                                 _stats.increment(TinyStatus::ERR_CRC);
+                                _state = (priorState == TinyState::AWAITING_ACK ||
+                                          priorState == TinyState::CONNECTING)
+                                         ? priorState
+                                         : TinyState::WAIT_FOR_SYNC;
                             }
+                        }
+
+                    } else {
+                        // Frame too short — discard and resync.
+                        _rawIdx = 0;
+                        if (_state == TinyState::IN_FRAME ||
+                                _state == TinyState::FRAME_COMPLETE) {
+                            _state = TinyState::WAIT_FOR_SYNC;
                         }
                     }
 
-                    _rawIdx = 0;
-                }
-
-                // -------------------------------------------------------------
-                // Accumulate bytes
-                // -------------------------------------------------------------
-                else {
+                // ----------------------------------------------------------
+                // Non-zero byte — accumulate into the raw buffer
+                // ----------------------------------------------------------
+                } else {
                     if (_rawIdx < sizeof(_rawBuf)) {
                         _rawBuf[_rawIdx++] = c;
-                    }
-                    else {
+                        if (_state == TinyState::WAIT_FOR_SYNC) {
+                            _state = TinyState::IN_FRAME;
+                        }
+                    } else {
                         _stats.increment(TinyStatus::ERR_OVERFLOW);
                         _rawIdx = 0;
+                        if (_state == TinyState::IN_FRAME) {
+                            _state = TinyState::WAIT_FOR_SYNC;
+                        }
                     }
                 }
-            }
-        }
+            } // while available
+        } // update()
 
 
-        // -------------------------------------------------------------------------
-        // TX: Encode + Send Frame
+        // ---- sendData() — Encode and transmit a user data frame -------------
         //
-        // Uses local stack buffers so it never aliases the RX accumulation buffers
-        // (_pBuf / _rawBuf), making full-duplex use safe.
-        // -------------------------------------------------------------------------
+        // Uses local stack buffers — never aliases the RX accumulation buffers.
+        // In handshake mode the call is dropped silently until connected().
+        // After a successful send, transitions to AWAITING_ACK (handshake mode).
+        //
         void sendData(uint8_t type, const T& payload) {
             if (!_hw->isOpen()) return;
+            if (_handshakeEnabled && !connected()) return;
 
-            // Local buffers for TX encoding — do not touch the class-member RX buffers.
             const size_t TX_PLAIN = 3 + sizeof(T) + 2;
             const size_t TX_ENC   = TX_PLAIN + 4;
             uint8_t pBuf[TX_PLAIN];
             uint8_t rawBuf[TX_ENC];
 
             _currSeq = _nextSeq++;
-            size_t plainLen = tinylink::packet::pack(type, _currSeq, (const uint8_t*)&payload, sizeof(T), pBuf, TX_PLAIN);
+            size_t plainLen = tinylink::packet::pack(
+                type, _currSeq,
+                reinterpret_cast<const uint8_t*>(&payload), sizeof(T),
+                pBuf, TX_PLAIN);
             if (plainLen == 0) { _stats.increment(TinyStatus::ERR_CRC); return; }
-            size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen, rawBuf, TX_ENC);
-
+            size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen,
+                                                       rawBuf, TX_ENC);
             _hw->write(0x00);
             _hw->write(rawBuf, eLen);
             _hw->write(0x00);
+
+            if (_handshakeEnabled) {
+                _state    = TinyState::AWAITING_ACK;
+                _lastSent = _hw->millis();
+            }
         }
 
-        // -------------------------------------------------------------------------
-        // Logging API
+
+        // ---- sendLog() — Send a structured debug/log frame ------------------
         //
-        // Sends a structured Debug ('g') frame using the DebugMessage wire format.
-        // The receiver can cast the payload directly to a DebugMessage struct.
+        // Wire format: DebugMessage [ts:4][level:1][code:2][text:25] = 32 B.
+        // The receiver can cast the raw payload directly to DebugMessage.
         //
-        // Wire layout: see DebugMessage — [ts:4][level:1][code:2][text:25]
-        // Text is truncated to DEBUG_TEXT_CAPACITY - 1 (24) characters.
-        // -------------------------------------------------------------------------
-        bool sendLog(LogLevel level, uint16_t code, const char *text) {
+        bool sendLog(LogLevel level, uint16_t code, const char* text) {
             if (!_hw->isOpen()) return false;
 
             DebugMessage msg;
@@ -422,9 +546,10 @@ namespace tinylink {
             debugmessage_set_text(msg, text);
 
             _currSeq = _nextSeq++;
-            return send_internal(message_type_to_wire(MessageType::Debug),
-                                 _currSeq, reinterpret_cast<const uint8_t*>(&msg), sizeof(msg),
-                                 /*internal=*/false);
+            return send_internal(
+                message_type_to_wire(MessageType::Debug), _currSeq,
+                reinterpret_cast<const uint8_t*>(&msg), sizeof(msg),
+                /*isInternal=*/false);
         }
     };
 
