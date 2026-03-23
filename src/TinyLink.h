@@ -239,6 +239,11 @@ namespace tinylink {
             static_assert(alignof(T) == 1,
                 "TinyLink: Data type must be packed. "
                 "Use __attribute__((packed)).");
+            // Auto-register this instance so autoUpdateISR() works without
+            // any extra setup call.  Only one instance per <T,Adapter> pair
+            // can be registered at a time; a later call to enableAutoUpdate()
+            // can explicitly switch which instance is ISR-driven.
+            _s_instance = this;
         }
 
         // ---- Configuration --------------------------------------------------
@@ -255,16 +260,25 @@ namespace tinylink {
         void setTimeout(unsigned long ms)              { _timeout = ms; }
 
         /**
-         * @brief Register this instance for interrupt-driven updates.
+         * @brief Explicitly select this instance for interrupt-driven updates.
          *
-         * After calling enableAutoUpdate(), the static function autoUpdateISR()
-         * can be passed to a hardware timer or UART interrupt attachment routine.
-         * The ISR will call update() on this TinyLink instance without requiring
-         * the user to do so in their main loop.
+         * The most recently constructed TinyLink instance is automatically
+         * registered, so this call is **optional** for the common single-instance
+         * case.  Call it explicitly only when you have multiple TinyLink instances
+         * of the same <T,Adapter> type and want to control which one receives ISR
+         * calls.
          *
-         * Example (Arduino with TimerOne library):
+         * After calling (or without calling, for the default instance),
+         * autoUpdateISR() can be passed to any hardware timer, UART RX interrupt,
+         * or platform-specific interrupt-attachment routine.
+         *
+         * Example — explicit override for a second instance (Arduino + TimerOne):
          * @code
-         *   link.enableAutoUpdate();
+         *   TinyLink<MyData, MyAdapter> linkA(adapterA);
+         *   TinyLink<MyData, MyAdapter> linkB(adapterB);
+         *   // linkB was constructed last; autoUpdateISR() targets it by default.
+         *   // To drive linkA from the ISR instead:
+         *   linkA.enableAutoUpdate();
          *   Timer1.attachInterrupt(TinyLink<MyData, MyAdapter>::autoUpdateISR, 1000);
          * @endcode
          *
@@ -276,9 +290,32 @@ namespace tinylink {
         /**
          * @brief Static ISR-compatible update function.
          *
-         * Attach this function to a hardware timer, UART RX interrupt, or any
-         * platform-specific interrupt source to drive the protocol engine
-         * automatically.
+         * Targets the most recently constructed (or last enableAutoUpdate()-ed)
+         * instance.  No prior setup call is required for the common case of one
+         * TinyLink instance per <T,Adapter> type — construction is sufficient.
+         *
+         * Attach to any interrupt source that suits your platform:
+         *   - A hardware timer (e.g., TimerOne, ESP32 hw_timer)
+         *   - A UART RX interrupt
+         *   - Arduino's serialEvent() for a zero-interrupt fallback
+         *   - Any RTOS task / periodic callback
+         *
+         * Example — Arduino main-loop polling (no interrupt needed):
+         * @code
+         *   void loop() { link.update(); }          // works on every device
+         * @endcode
+         *
+         * Example — Timer ISR (when hardware timer is available):
+         * @code
+         *   Timer1.attachInterrupt(TinyLink<MyData, MyAdapter>::autoUpdateISR, 1000);
+         * @endcode
+         *
+         * Example — Arduino serialEvent() (no true interrupt required):
+         * @code
+         *   void serialEvent() {
+         *       TinyLink<MyData, MyAdapter>::autoUpdateISR();
+         *   }
+         * @endcode
          *
          * @see enableAutoUpdate()
          */
@@ -542,7 +579,13 @@ namespace tinylink {
                                     // Callback fires while state is FRAME_COMPLETE
                                     // so it can observe the dispatch moment.
                                     _onDataReceived(_data);
-                                    _state = nextState;
+                                    // If the callback replied via sendData() the state
+                                    // has already advanced (e.g. to AWAITING_ACK).
+                                    // Only apply the idle nextState when the callback
+                                    // left _state unchanged (still FRAME_COMPLETE).
+                                    if (_state == TinyState::FRAME_COMPLETE) {
+                                        _state = nextState;
+                                    }
                                 } else {
                                     // Polling: transition first, then signal.
                                     _state  = nextState;
@@ -619,6 +662,35 @@ namespace tinylink {
                 _state    = TinyState::AWAITING_ACK;
                 _lastSent = _hw->millis();
             }
+        }
+
+        // ---- sendAck() — Send an ACK for the last received user data frame --
+        //
+        // Call this from onDataReceived() (or from polling code after peek())
+        // when the peer has handshake mode enabled (begin() was called) and is
+        // waiting in AWAITING_ACK.  The peer exits that state immediately rather
+        // than waiting for the ACK timeout.
+        //
+        // Calling sendAck() from inside onDataReceived() is safe and recommended:
+        //   void onData(const T& d) {
+        //       link.sendAck();           // release peer from AWAITING_ACK
+        //       link.sendData(TYPE, reply); // send response (→ AWAITING_ACK)
+        //   }
+        //
+        // If begin() was never called (no handshake mode), the peer is never in
+        // AWAITING_ACK, so this call has no observable effect.
+        //
+        // @param result  Status code to include in the ACK (default STATUS_OK).
+        // @return true on success; false if the port is closed.
+        //
+        bool sendAck(TinyStatus result = TinyStatus::STATUS_OK) {
+            TinyAck ack;
+            ack.seq    = _currSeq;   // echo the sequence of the last received frame
+            ack.result = result;
+            return send_internal(
+                message_type_to_wire(MessageType::Ack), _currSeq,
+                reinterpret_cast<const uint8_t*>(&ack), sizeof(ack),
+                /*isInternal=*/true);
         }
 
 

@@ -257,6 +257,81 @@ void test_auto_update_isr_drives_engine(void) {
         "autoUpdateISR must drive the engine exactly like update()");
 }
 
+/**
+ * @brief TEST: autoUpdateISR works without any prior enableAutoUpdate() call.
+ *
+ * The constructor auto-registers the instance, so attaching autoUpdateISR()
+ * to any interrupt source must work immediately after construction — no
+ * extra setup step is required.
+ */
+void test_auto_update_isr_works_without_enable_call(void) {
+    static int noEnable_callCount;
+    noEnable_callCount = 0;
+
+    // Use a fresh pair so the auto-registration from construction is the only
+    // registration — no enableAutoUpdate() is called anywhere below.
+    static LoopbackAdapter freshAdapter;
+    static tinylink::TinyLink<TestPayload, LoopbackAdapter> freshLink(freshAdapter);
+    freshLink.reset();
+    freshAdapter.getRawBuffer().clear();
+
+    freshLink.onDataReceived([](const TestPayload&) { noEnable_callCount++; });
+
+    TestPayload p = { 77, 7.7f };
+    freshLink.sendData(static_cast<uint8_t>(MessageType::Data), p);
+
+    // Drive via ISR without having called enableAutoUpdate().
+    while (freshAdapter.available() > 0) {
+        tinylink::TinyLink<TestPayload, LoopbackAdapter>::autoUpdateISR();
+    }
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, noEnable_callCount,
+        "autoUpdateISR must work without calling enableAutoUpdate() first");
+}
+
+/**
+ * @brief TEST: enableAutoUpdate() re-registers a different instance for ISR dispatch.
+ *
+ * When two instances of the same <T,Adapter> type exist, the last-constructed
+ * one is registered by default.  enableAutoUpdate() on the first instance
+ * must switch ISR dispatch back to it.
+ */
+void test_enable_auto_update_switches_instance(void) {
+    static int countA, countB;
+    countA = 0;
+    countB = 0;
+
+    static LoopbackAdapter adA, adB;
+    // instA is constructed first; instB last → instB is the default ISR target.
+    static tinylink::TinyLink<TestPayload, LoopbackAdapter> instA(adA);
+    static tinylink::TinyLink<TestPayload, LoopbackAdapter> instB(adB);
+    instA.reset(); adA.getRawBuffer().clear();
+    instB.reset(); adB.getRawBuffer().clear();
+
+    instA.onDataReceived([](const TestPayload&) { countA++; });
+    instB.onDataReceived([](const TestPayload&) { countB++; });
+
+    // instB is the default ISR target after construction.
+    TestPayload p = { 1, 1.0f };
+    instB.sendData(static_cast<uint8_t>(MessageType::Data), p);
+    while (adB.available() > 0) {
+        tinylink::TinyLink<TestPayload, LoopbackAdapter>::autoUpdateISR();
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, countB,
+        "Default ISR target must be last-constructed instance");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, countA,
+        "Non-default instance must not receive ISR-driven updates");
+
+    // Explicitly switch to instA.
+    instA.enableAutoUpdate();
+    instA.sendData(static_cast<uint8_t>(MessageType::Data), p);
+    while (adA.available() > 0) {
+        tinylink::TinyLink<TestPayload, LoopbackAdapter>::autoUpdateISR();
+    }
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, countA,
+        "After enableAutoUpdate(), ISR must drive the newly registered instance");
+}
+
 void register_callback_tests(void) {
     RUN_TEST(test_callback_receives_multiple_frames);
     RUN_TEST(test_callback_mode_does_not_set_available);
@@ -266,4 +341,104 @@ void register_callback_tests(void) {
     RUN_TEST(test_on_handshake_received_fires);
     RUN_TEST(test_on_ack_received_fires);
     RUN_TEST(test_auto_update_isr_drives_engine);
+    RUN_TEST(test_auto_update_isr_works_without_enable_call);
+    RUN_TEST(test_enable_auto_update_switches_instance);
 }
+
+// ---------------------------------------------------------------------------
+// sendAck()
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief TEST: sendAck() releases the peer from AWAITING_ACK.
+ *
+ * After A sends data (handshake mode), A enters AWAITING_ACK.  B receives
+ * the data and calls sendAck().  A's next update() must exit AWAITING_ACK
+ * and return to WAIT_FOR_SYNC without waiting for the timeout.
+ */
+void test_sendack_clears_peer_awaiting_ack(void) {
+    static TinyDuplexTestAdapter dA, dB;
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lA(dA);
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lB(dB);
+
+    dA.connect(dB); dB.connect(dA);
+    dA.setMillis(0); dB.setMillis(0);
+    dA.getRawBuffer().clear(); dB.getRawBuffer().clear();
+    lA.reset(); lB.reset();
+
+    // Both connect via handshake.
+    lA.begin(); lB.begin();
+    for (int i = 0; i < 10; ++i) { lA.update(); lB.update(); }
+    TEST_ASSERT_TRUE(lA.connected());
+    TEST_ASSERT_TRUE(lB.connected());
+
+    static bool ackSent;
+    ackSent = false;
+    lB.onDataReceived([](const TestPayload&) {
+        // B acknowledges A's frame immediately.
+        lB.sendAck();
+        ackSent = true;
+    });
+
+    TestPayload p = { 10, 1.0f };
+    lA.sendData(static_cast<uint8_t>(MessageType::Data), p);
+    TEST_ASSERT_EQUAL(TinyState::AWAITING_ACK, lA.state());
+
+    // One round-trip: B receives data + sends ACK; A receives ACK.
+    for (int i = 0; i < 10; ++i) { lB.update(); lA.update(); }
+
+    TEST_ASSERT_TRUE_MESSAGE(ackSent, "B's callback must have fired");
+    TEST_ASSERT_EQUAL_MESSAGE(TinyState::WAIT_FOR_SYNC, lA.state(),
+        "A must leave AWAITING_ACK once the ACK arrives");
+}
+
+/**
+ * @brief TEST: Calling sendData() from inside onDataReceived() preserves AWAITING_ACK.
+ *
+ * This tests the state-overwrite fix: update() must NOT clobber the
+ * AWAITING_ACK state that sendData() sets when called from a callback.
+ */
+void test_reply_from_callback_preserves_awaiting_ack(void) {
+    static TinyDuplexTestAdapter dA2, dB2;
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lA2(dA2);
+    static TinyLink<TestPayload, TinyDuplexTestAdapter> lB2(dB2);
+
+    dA2.connect(dB2); dB2.connect(dA2);
+    dA2.setMillis(0); dB2.setMillis(0);
+    dA2.getRawBuffer().clear(); dB2.getRawBuffer().clear();
+    lA2.reset(); lB2.reset();
+
+    lA2.begin(); lB2.begin();
+    for (int i = 0; i < 10; ++i) { lA2.update(); lB2.update(); }
+
+    static bool replySent;
+    replySent = false;
+    lB2.onDataReceived([](const TestPayload& d) {
+        // B ACKs A's request, then sends a reply of its own.
+        lB2.sendAck();
+        TestPayload reply = { d.uptime + 1, d.value + 1.0f };
+        lB2.sendData(static_cast<uint8_t>(MessageType::Data), reply);
+        replySent = true;
+    });
+
+    TestPayload req = { 1, 0.0f };
+    lA2.sendData(static_cast<uint8_t>(MessageType::Data), req);
+
+    // One round: B processes A's Data, fires callback (ACK + reply), A processes ACK.
+    for (int i = 0; i < 10; ++i) { lB2.update(); lA2.update(); }
+
+    TEST_ASSERT_TRUE_MESSAGE(replySent, "B's callback must have fired and sent a reply");
+    // B must be in AWAITING_ACK (waiting for A to ACK B's reply) —
+    // NOT back in WAIT_FOR_SYNC (which would indicate the state was overwritten).
+    TEST_ASSERT_EQUAL_MESSAGE(TinyState::AWAITING_ACK, lB2.state(),
+        "B must be in AWAITING_ACK after sending a reply from its callback");
+    // A exits AWAITING_ACK after receiving B's ACK.
+    TEST_ASSERT_EQUAL_MESSAGE(TinyState::WAIT_FOR_SYNC, lA2.state(),
+        "A must have exited AWAITING_ACK after receiving B's ACK");
+}
+
+void register_sendack_tests(void) {
+    RUN_TEST(test_sendack_clears_peer_awaiting_ack);
+    RUN_TEST(test_reply_from_callback_preserves_awaiting_ack);
+}
+

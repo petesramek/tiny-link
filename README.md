@@ -150,6 +150,109 @@ void loop() {
 **Use Callbacks** if you want to keep your communication logic completely separated from your application logic. This is highly recommended as it makes the `TinyLink` engine more reactive.
 
 
+## 🔄 Auto-Update Modes
+
+TinyLink's protocol engine must be called periodically to process incoming bytes,
+manage timeouts, and fire callbacks.  There are **three supported ways** to drive
+it — choose the one that fits your hardware and application:
+
+| | Mode 1 — Main Loop | Mode 2 — Timer ISR | Mode 3 — serialEvent() |
+|---|---|---|---|
+| **How** | `link.update()` in `loop()` | `autoUpdateISR()` on a hardware timer | `autoUpdateISR()` from `serialEvent()` |
+| **Hardware interrupt?** | ❌ No | ✅ Timer required | ❌ No |
+| **Extra setup call?** | None | Timer init + `attachInterrupt` | None |
+| **`enableAutoUpdate()`?** | Not needed | Not needed | Not needed |
+| **Works if loop() blocks?** | ❌ No | ✅ Yes | ❌ No |
+| **Best for** | Any board, simplest code | Deterministic, busy loops | No-timer boards, reactive RX |
+
+### Mode 1 — Main Loop (default, works everywhere)
+
+```cpp
+void loop() {
+    link.update();  // ← only required call; works on every board
+}
+```
+
+### Mode 2 — Timer ISR (deterministic, interrupt-driven)
+
+The constructor auto-registers the instance — no `enableAutoUpdate()` needed.
+
+```cpp
+#include <TimerOne.h>
+
+void setup() {
+    Timer1.initialize(1000);  // 1 ms
+    Timer1.attachInterrupt(TinyLink<MyData, TinyArduinoAdapter>::autoUpdateISR);
+    // No enableAutoUpdate() call required.
+}
+// loop() does not need to call update() at all.
+```
+
+### Mode 3 — serialEvent() (zero-setup, no timer needed)
+
+Arduino calls `serialEvent()` automatically between `loop()` iterations when
+Serial bytes are waiting — no library or interrupt configuration required.
+
+```cpp
+void serialEvent() {
+    TinyLink<MyData, TinyArduinoAdapter>::autoUpdateISR();
+}
+// setup() and loop() have no TinyLink maintenance calls.
+```
+
+> **Multi-instance note:** When you have two `TinyLink<T,Adapter>` objects of
+> the same type, the last-constructed one is the default ISR target.  Call
+> `link.enableAutoUpdate()` on the desired instance to override.
+
+For a complete two-device IoT scenario in all three modes, see the
+[`IoT_Sensor_Gateway_*`](examples/) family of examples below.
+
+---
+
+## 🌐 IoT Sensor Gateway — Full Bidirectional Examples
+
+The `IoT_Sensor_Gateway_*` examples demonstrate a realistic ATtiny88 ↔ ESP8266
+system: the ATtiny88 reads a temperature sensor, the ESP8266 requests readings
+every 60 seconds and forwards them to a cloud endpoint.
+
+### Scenario
+
+```
+ATtiny88                              ESP8266
+    │◄──── Handshake ───────────────────►│  begin() on both sides
+    │             both: WAIT_FOR_SYNC    │
+    │                                    │
+    │◄═══ TYPE_CMD (request) ════════════│  every 60 s
+    │═══ ACK ════════════════════════════►│  sendAck() in callback
+    │═══ TYPE_DATA (temp + uptime) ═════►│
+    │◄══ ACK ════════════════════════════ │  sendAck() in callback
+    │                         ESP: posts to cloud
+```
+
+### `sendAck()` — Releasing the Peer from AWAITING_ACK
+
+When `begin()` is called (handshake mode), every `sendData()` puts the sender
+into `AWAITING_ACK`.  The receiver must call `sendAck()` to release it promptly:
+
+```cpp
+void onReceive(const SensorMessage& data) {
+    link.sendAck();          // ← release peer from AWAITING_ACK immediately
+    link.sendData(TYPE_DATA, response);  // reply — safe to call from callback
+}
+```
+
+### Three Update Modes, Side by Side
+
+| Example folder                     | update() driven by   | ISR-safe callbacks? | HW interrupt? |
+|------------------------------------|----------------------|---------------------|---------------|
+| `IoT_Sensor_Gateway_Polling`       | `loop()`             | ✅ Yes              | ❌ No         |
+| `IoT_Sensor_Gateway_TimerISR`      | Hardware timer ISR   | ⚠ Deferred only    | ✅ Yes        |
+| `IoT_Sensor_Gateway_SerialEvent`   | `serialEvent()`      | ✅ Yes              | ❌ No         |
+
+> **Mode 2 (Timer ISR) rule:** callbacks fire inside a hardware ISR — only set
+> `volatile` flags there.  Call `sendAck()` and `sendData()` from `loop()`.
+
+
 ## 📊 Performance & Telemetry
 
 Monitor link health in real-time to diagnose wiring issues:
