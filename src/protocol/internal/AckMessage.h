@@ -11,18 +11,9 @@
 
 #include <stdint.h>
 #include "protocol/Status.h"
+#include "protocol/internal/Packed.h"
 
 namespace tinylink {
-
-#if defined(_MSC_VER)
-    #define TINYLINK_PACKED_BEGIN __pragma(pack(push, 1))
-    #define TINYLINK_PACKED_END   __pragma(pack(pop))
-    #define TINYLINK_PACKED
-#else
-    #define TINYLINK_PACKED_BEGIN
-    #define TINYLINK_PACKED_END
-    #define TINYLINK_PACKED __attribute__((packed))
-#endif
 
     /**
      * @brief Two-byte ACK/NACK payload for MessageType::Ack ('A') frames.
