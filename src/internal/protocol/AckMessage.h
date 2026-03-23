@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 #include "protocol/Status.h"
-#include "protocol/internal/Packed.h"
+#include "internal/protocol/Packed.h"
 
 namespace tinylink {
 

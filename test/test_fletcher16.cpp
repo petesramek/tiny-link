@@ -10,7 +10,7 @@
 #include <unity.h>
 #include <stdint.h>
 #include <string.h>
-#include "Fletcher16.h"
+#include "internal/codec/Fletcher16.h"
 
 using namespace tinylink::codec;
 

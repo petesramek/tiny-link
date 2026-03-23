@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 #include <string.h>
-#include "protocol/internal/Packed.h"
+#include "internal/protocol/Packed.h"
 
 namespace tinylink {
 
