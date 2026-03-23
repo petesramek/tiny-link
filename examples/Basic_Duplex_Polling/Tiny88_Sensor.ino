@@ -29,7 +29,7 @@ void loop() {
     static uint32_t lastSend = 0;
     if (millis() - lastSend > 2000) {
         MyData status = { millis(), 24.5f, 0 };
-        link.send(TYPE_DATA, status);
+        link.sendData(TYPE_DATA, status);
         lastSend = millis();
     }
 }

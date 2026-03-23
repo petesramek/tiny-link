@@ -31,7 +31,7 @@ void loop() {
     // 2. Wait for the "Ready" packet from ESP before sending
     if (gatewayReady) {
         SensorData myData = { 101, 23.5f };
-        sensorLink.send(TYPE_DATA, myData);
+        sensorLink.sendData(TYPE_DATA, myData);
         
         // 3. Optional: Go back to sleep after sending
         delay(100); // Ensure bytes clear the TX buffer

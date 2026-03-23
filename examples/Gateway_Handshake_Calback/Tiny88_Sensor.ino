@@ -41,7 +41,7 @@ void loop() {
     // 2. Action: ESP signaled it is ready via Callback
     if (espIsReady) {
         SensorData myData = { 101, 23.5f };
-        sensorLink.send(TYPE_DATA, myData);
+        sensorLink.sendData(TYPE_DATA, myData);
         
         // Success! Blink and Shutdown
         digitalWrite(LED_BUILTIN, HIGH);
