@@ -10,7 +10,7 @@ namespace tinylink {
 namespace packet {
 
 // helper: packet length = 3 (hdr) + payloadLen + 2 (fletcher)
-inline size_t packet_size(size_t payloadLen) {
+static inline size_t packet_size(size_t payloadLen) {
     return 3 + payloadLen + 2;
 }
 
