@@ -17,11 +17,11 @@ void test_mt_from_wire_data(void) {
                             static_cast<uint8_t>(out));
 }
 
-/** @test message_type_from_wire accepts 'g' as MessageType::Debug. */
+/** @test message_type_from_wire accepts 'L' as MessageType::Log. */
 void test_mt_from_wire_debug(void) {
     MessageType out;
-    TEST_ASSERT_TRUE(message_type_from_wire('g', out));
-    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MessageType::Debug),
+    TEST_ASSERT_TRUE(message_type_from_wire('L', out));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(MessageType::Log),
                             static_cast<uint8_t>(out));
 }
 
@@ -74,7 +74,7 @@ void test_mt_from_wire_unknown(void) {
 /** @test message_type_to_wire returns correct byte for each type. */
 void test_mt_to_wire(void) {
     TEST_ASSERT_EQUAL_HEX8('D', message_type_to_wire(MessageType::Data));
-    TEST_ASSERT_EQUAL_HEX8('g', message_type_to_wire(MessageType::Debug));
+    TEST_ASSERT_EQUAL_HEX8('L', message_type_to_wire(MessageType::Log));
     TEST_ASSERT_EQUAL_HEX8('C', message_type_to_wire(MessageType::Cmd));
     TEST_ASSERT_EQUAL_HEX8('A', message_type_to_wire(MessageType::Ack));
     TEST_ASSERT_EQUAL_HEX8('K', message_type_to_wire(MessageType::Done));
@@ -84,7 +84,7 @@ void test_mt_to_wire(void) {
 /** @test message_type_to_string returns expected label strings. */
 void test_mt_to_string(void) {
     TEST_ASSERT_EQUAL_STRING("Data",      message_type_to_string(MessageType::Data));
-    TEST_ASSERT_EQUAL_STRING("Debug",     message_type_to_string(MessageType::Debug));
+    TEST_ASSERT_EQUAL_STRING("Log",       message_type_to_string(MessageType::Log));
     TEST_ASSERT_EQUAL_STRING("Cmd",       message_type_to_string(MessageType::Cmd));
     TEST_ASSERT_EQUAL_STRING("Ack",       message_type_to_string(MessageType::Ack));
     TEST_ASSERT_EQUAL_STRING("Done",      message_type_to_string(MessageType::Done));
@@ -95,7 +95,7 @@ void test_mt_to_string(void) {
 void test_mt_roundtrip(void) {
     static const MessageType types[] = {
         MessageType::Data,
-        MessageType::Debug,
+        MessageType::Log,
         MessageType::Cmd,
         MessageType::Ack,
         MessageType::Done,

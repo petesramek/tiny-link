@@ -12,7 +12,7 @@
 #include "Packet.h"
 #include "version.h"
 #include "protocol/internal/AckMessage.h"
-#include "protocol/internal/DebugMessage.h"
+#include "protocol/internal/LogMessage.h"
 #include "protocol/internal/HandshakeMessage.h"
 #include "protocol/LogLevel.h"
 #include <stdint.h>
@@ -531,23 +531,23 @@ namespace tinylink {
         }
 
 
-        // ---- sendLog() — Send a structured debug/log frame ------------------
+        // ---- sendLog() — Send a structured log frame -----------------------
         //
-        // Wire format: DebugMessage [ts:4][level:1][code:2][text:25] = 32 B.
-        // The receiver can cast the raw payload directly to DebugMessage.
+        // Wire format: LogMessage [ts:4][level:1][code:2][text:25] = 32 B.
+        // The receiver can cast the raw payload directly to LogMessage.
         //
         bool sendLog(LogLevel level, uint16_t code, const char* text) {
             if (!_hw->isOpen()) return false;
 
-            DebugMessage msg;
+            LogMessage msg;
             msg.ts    = static_cast<uint32_t>(_hw->millis());
             msg.level = static_cast<uint8_t>(level);
             msg.code  = code;
-            debugmessage_set_text(msg, text);
+            logmessage_set_text(msg, text);
 
             _currSeq = _nextSeq++;
             return send_internal(
-                message_type_to_wire(MessageType::Debug), _currSeq,
+                message_type_to_wire(MessageType::Log), _currSeq,
                 reinterpret_cast<const uint8_t*>(&msg), sizeof(msg),
                 /*isInternal=*/false);
         }

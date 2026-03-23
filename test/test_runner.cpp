@@ -9,7 +9,7 @@ void register_protocol_tests(void);
 void register_callback_tests(void);
 void register_stats_tests(void);
 void register_ackmessage_tests(void);
-void register_debugmessage_tests(void);
+void register_logmessage_tests(void);
 void register_message_type_tests(void);
 void register_status_tests(void);
 void register_handshake_tests(void);
@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
     register_callback_tests();
     register_stats_tests();
     register_ackmessage_tests();
-    register_debugmessage_tests();
+    register_logmessage_tests();
     register_message_type_tests();
     register_status_tests();
     register_handshake_tests();

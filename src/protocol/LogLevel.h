@@ -13,7 +13,7 @@ namespace tinylink {
 /**
  * @brief Severity level for log messages sent via TinyLink::sendLog().
  *
- * Values are transmitted as a single byte on the wire inside a Debug ('g') frame.
+ * Values are transmitted as a single byte on the wire inside a Log ('L') frame.
  * Ordered from least severe (TRACE) to most severe (ERROR).
  */
 enum class LogLevel : uint8_t {

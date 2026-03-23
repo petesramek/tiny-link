@@ -9,7 +9,7 @@ namespace tinylink {
     // Stored as single bytes on the wire (ASCII codes).
     enum class MessageType : uint8_t {
         Data      = 'D',      /**< Data payload frame */
-        Debug     = 'g',      /**< Debug / diagnostic payload frame */
+        Log       = 'L',      /**< Log / diagnostic payload frame */
         Cmd       = 'C',      /**< Command frame (renamed from Req/'R') */
         Ack       = 'A',      /**< Combined ACK/NACK — carries a TinyStatus code */
         Done      = 'K',      /**< Done / end-of-session frame */
@@ -21,7 +21,7 @@ namespace tinylink {
     inline bool message_type_from_wire(uint8_t b, MessageType &out) {
         switch (b) {
             case static_cast<uint8_t>(MessageType::Data):      out = MessageType::Data;      return true;
-            case static_cast<uint8_t>(MessageType::Debug):     out = MessageType::Debug;     return true;
+            case static_cast<uint8_t>(MessageType::Log):       out = MessageType::Log;       return true;
             case static_cast<uint8_t>(MessageType::Cmd):       out = MessageType::Cmd;       return true;
             case static_cast<uint8_t>(MessageType::Ack):       out = MessageType::Ack;       return true;
             case static_cast<uint8_t>(MessageType::Done):      out = MessageType::Done;      return true;
@@ -39,7 +39,7 @@ namespace tinylink {
     inline const char* message_type_to_string(MessageType t) {
         switch (t) {
             case MessageType::Data:      return "Data";
-            case MessageType::Debug:     return "Debug";
+            case MessageType::Log:       return "Log";
             case MessageType::Cmd:       return "Cmd";
             case MessageType::Ack:       return "Ack";
             case MessageType::Done:      return "Done";
