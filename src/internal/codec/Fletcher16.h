@@ -1,6 +1,6 @@
 /**
  * @file Fletcher16.h
- * @brief Fletcher-16 checksum declaration.
+ * @brief Fletcher-16 checksum implementation.
  *
  * AVR-friendly – no STL dependencies.
  */
@@ -24,7 +24,23 @@ namespace codec {
  * @param len  Number of bytes to process.
  * @return (sum2 << 8) | sum1
  */
-uint16_t fletcher16(const uint8_t* data, size_t len);
+inline uint16_t fletcher16(const uint8_t* data, size_t len) {
+    uint16_t sum1 = 0xff, sum2 = 0xff;
+
+    while (len) {
+        size_t tlen = len > 20 ? 20 : len;
+        len -= tlen;
+        do {
+            sum1 += *data++;
+            sum2 += sum1;
+        } while (--tlen);
+
+        sum1 = (sum1 & 0xff) + (sum1 >> 8);
+        sum2 = (sum2 & 0xff) + (sum2 >> 8);
+    }
+
+    return (sum2 << 8) | sum1;
+}
 
 } // namespace codec
 } // namespace tinylink
