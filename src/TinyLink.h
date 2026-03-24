@@ -156,6 +156,20 @@ namespace tinylink {
             return true;
         }
 
+        // ---- State utility --------------------------------------------------
+        //
+        // Returns priorState unchanged for connection-phase states
+        // (AWAITING_ACK, CONNECTING), otherwise returns WAIT_FOR_SYNC.
+        // Used whenever a non-data event must not disturb an in-progress
+        // connection or ACK wait.
+        //
+        TinyState restoreState(TinyState priorState) const {
+            return (priorState == TinyState::AWAITING_ACK ||
+                    priorState == TinyState::CONNECTING)
+                   ? priorState
+                   : TinyState::WAIT_FOR_SYNC;
+        }
+
         // ---- Handshake handler (symmetric two-frame exchange) ---------------
         //
         // The HandshakeMessage::version byte distinguishes the two frame kinds:
@@ -165,15 +179,15 @@ namespace tinylink {
         // Rules:
         //   Receive HS(v=0) from peer
         //     → always send HS(v=1) back (helps peer connect / reconnect)
-        //     → if we were CONNECTING, the reply from us signals readiness
-        //        and we advance to WAIT_FOR_SYNC
+        //     → advance out of CONNECTING regardless of which peer initiated
         //
         //   Receive HS(v=1) from peer
-        //     → if we were CONNECTING, peer acknowledged our initial HS
-        //        → advance to WAIT_FOR_SYNC (no further reply needed)
-        //     → if already connected, ignore (stale reply, no ping-pong)
+        //     → peer acknowledged our begin(); advance out of CONNECTING
+        //     → if already connected, ignore to prevent ping-pong
         //
-        // This eliminates the need for a HANDSHAKING intermediate state.
+        // In both cases the resulting state is the same:
+        //   AWAITING_ACK  if we were already waiting for a data ACK
+        //   WAIT_FOR_SYNC otherwise (including the CONNECTING → connected path)
         //
         // handleHandshakeMessage receives priorState (the state before we
         // entered FRAME_COMPLETE) so it can make correct transitions
@@ -185,35 +199,21 @@ namespace tinylink {
             HandshakeMessage m;
             memcpy(&m, payload, sizeof(m));
 
+            // Initial connection request: reply with HS(v=1).
             if (m.version == 0) {
-                // Initial connection request: reply with HS(v=1).
                 HandshakeMessage reply;
                 reply.version = 1;
                 send_internal(message_type_to_wire(MessageType::Handshake), 0,
                               reinterpret_cast<const uint8_t*>(&reply),
                               sizeof(reply), /*isInternal=*/true);
-
-                // If we were waiting to connect, the reply signals readiness.
-                if (fromState == TinyState::CONNECTING) {
-                    _state = TinyState::WAIT_FOR_SYNC;
-                } else {
-                    // Peer joined or rebooted — restore appropriate idle state.
-                    _state = (fromState == TinyState::AWAITING_ACK)
-                             ? TinyState::AWAITING_ACK
-                             : TinyState::WAIT_FOR_SYNC;
-                }
-
-            } else {
-                // HS reply (v=1): peer acknowledged our begin().
-                if (fromState == TinyState::CONNECTING) {
-                    _state = TinyState::WAIT_FOR_SYNC;
-                } else {
-                    // Already connected — ignore to prevent ping-pong.
-                    _state = (fromState == TinyState::AWAITING_ACK)
-                             ? TinyState::AWAITING_ACK
-                             : TinyState::WAIT_FOR_SYNC;
-                }
             }
+
+            // For both HS(v=0) and HS(v=1): we are now connected.
+            // Preserve AWAITING_ACK if a data ACK is still pending;
+            // otherwise move to the connected idle state.
+            _state = (fromState == TinyState::AWAITING_ACK)
+                     ? TinyState::AWAITING_ACK
+                     : TinyState::WAIT_FOR_SYNC;
         }
 
         // Private raw-level sendLog (delegates to the typed overload).
@@ -418,6 +418,190 @@ namespace tinylink {
         /** @brief Sequence number of the most recently received frame. */
         uint8_t seq()  const { return _currSeq; }
 
+        // ---- update() helpers -----------------------------------------------
+
+        // Periodic Handshake re-send while awaiting the peer.
+        void tickHandshake(unsigned long now) {
+            if (!_handshakeEnabled || _state != TinyState::CONNECTING) return;
+            if (now - _lastHandshakeSent < HANDSHAKE_RETRY_MS) return;
+            _lastHandshakeSent = now;
+            HandshakeMessage m;
+            m.version = 0;
+            send_internal(message_type_to_wire(MessageType::Handshake), 0,
+                          reinterpret_cast<const uint8_t*>(&m), sizeof(m),
+                          /*isInternal=*/true);
+        }
+
+        // Inter-byte timeout (stalled partial frame) and ACK timeout.
+        void tickTimeouts(unsigned long now) {
+            if (_rawIdx > 0 && (now - _lastByte > _timeout)) {
+                _rawIdx = 0;
+                _stats.increment(TinyStatus::ERR_TIMEOUT);
+                if (_state == TinyState::IN_FRAME) {
+                    _state = TinyState::WAIT_FOR_SYNC;
+                }
+                // CONNECTING / AWAITING_ACK: partial frame discarded, but the
+                // connection-phase state is preserved.
+            }
+            if (_handshakeEnabled &&
+                    _state == TinyState::AWAITING_ACK && _rawIdx == 0 &&
+                    now - _lastSent > _timeout) {
+                _stats.increment(TinyStatus::ERR_TIMEOUT);
+                _state = TinyState::WAIT_FOR_SYNC;
+            }
+        }
+
+        // Non-zero byte: append to the raw buffer or flag overflow.
+        void accumulateByte(uint8_t c) {
+            if (_rawIdx < sizeof(_rawBuf)) {
+                _rawBuf[_rawIdx++] = c;
+                if (_state == TinyState::WAIT_FOR_SYNC) {
+                    _state = TinyState::IN_FRAME;
+                }
+            } else {
+                _stats.increment(TinyStatus::ERR_OVERFLOW);
+                _rawIdx = 0;
+                if (_state == TinyState::IN_FRAME) {
+                    _state = TinyState::WAIT_FOR_SYNC;
+                }
+            }
+        }
+
+        // Handshake: unpack, update state, fire optional callback.
+        void dispatchHandshakeFrame(size_t dLen, TinyState priorState) {
+            uint8_t hsBuf[sizeof(HandshakeMessage)];
+            uint8_t rtype = 0, rseq = 0;
+            size_t hsLen = tinylink::packet::unpack(
+                _pBuf, dLen, &rtype, &rseq, hsBuf, sizeof(hsBuf));
+            if (hsLen == sizeof(HandshakeMessage)) {
+                handleHandshakeMessage(hsBuf, hsLen, priorState);
+                if (_onHandshakeReceived) {
+                    HandshakeMessage hm;
+                    memcpy(&hm, hsBuf, sizeof(hm));
+                    _onHandshakeReceived(hm);
+                }
+            } else {
+                _state = restoreState(priorState);
+            }
+        }
+
+        // Ack: unpack, clear AWAITING_ACK, fire optional callback.
+        void dispatchAckFrame(size_t dLen, TinyState priorState) {
+            uint8_t ackBuf[sizeof(TinyAck)];
+            uint8_t rtype = 0, rseq = 0;
+            size_t ackLen = tinylink::packet::unpack(
+                _pBuf, dLen, &rtype, &rseq, ackBuf, sizeof(ackBuf));
+            if (ackLen == sizeof(TinyAck)) {
+                _state = TinyState::WAIT_FOR_SYNC;
+                if (_onAckReceived) {
+                    TinyAck ack;
+                    memcpy(&ack, ackBuf, sizeof(ack));
+                    _onAckReceived(ack);
+                }
+            } else {
+                _stats.increment(TinyStatus::ERR_CRC);
+                _state = priorState;
+            }
+        }
+
+        // Log: unpack and fire optional callback; preserve connection state.
+        void dispatchLogFrame(size_t dLen, TinyState priorState) {
+            if (_onLogReceived) {
+                LogMessage logMsg;
+                uint8_t rtype = 0, rseq = 0;
+                size_t logLen = tinylink::packet::unpack(
+                    _pBuf, dLen, &rtype, &rseq,
+                    reinterpret_cast<uint8_t*>(&logMsg), sizeof(logMsg));
+                if (logLen == sizeof(LogMessage)) {
+                    _onLogReceived(logMsg);
+                }
+            }
+            _state = restoreState(priorState);
+        }
+
+        // User data: unpack, update state, fire callback or signal polling.
+        // Returns true when the caller (update()) should yield until flush().
+        bool dispatchDataFrame(size_t dLen, TinyState priorState) {
+            uint8_t rtype = 0, rseq = 0;
+            size_t payloadLen = tinylink::packet::unpack(
+                _pBuf, dLen, &rtype, &rseq,
+                reinterpret_cast<uint8_t*>(&_data), sizeof(T));
+
+            if (payloadLen != sizeof(T)) {
+                _stats.increment(TinyStatus::ERR_CRC);
+                _state = restoreState(priorState);
+                return false;
+            }
+
+            _currType = rtype;
+            _currSeq  = rseq;
+            _stats.increment(TinyStatus::STATUS_OK);
+
+            // Post-dispatch idle state: preserve AWAITING_ACK if a data ACK
+            // is still pending for a frame we sent earlier.
+            TinyState nextState = (priorState == TinyState::AWAITING_ACK)
+                                  ? TinyState::AWAITING_ACK
+                                  : TinyState::WAIT_FOR_SYNC;
+
+            if (_onDataReceived) {
+                // Callback fires while state is FRAME_COMPLETE so it can
+                // observe the dispatch moment.
+                _onDataReceived(_data);
+                // If the callback replied via sendData() the state has already
+                // advanced (e.g. to AWAITING_ACK). Only apply the idle
+                // nextState when the callback left _state unchanged.
+                if (_state == TinyState::FRAME_COMPLETE) {
+                    _state = nextState;
+                }
+                return false;
+            }
+
+            // Polling: transition first, then signal.
+            _state  = nextState;
+            _hasNew = true;
+            return true; // yield until caller calls flush()
+        }
+
+        // 0x00 delimiter received: decode the accumulated frame and dispatch
+        // it to the appropriate handler. Returns true when update() should yield.
+        bool onFrameBoundary() {
+            if (_rawIdx < 5) {
+                // Frame too short — discard and resync.
+                _rawIdx = 0;
+                if (_state == TinyState::IN_FRAME ||
+                        _state == TinyState::FRAME_COMPLETE) {
+                    _state = TinyState::WAIT_FOR_SYNC;
+                }
+                return false;
+            }
+
+            TinyState priorState = _state;
+            _state = TinyState::FRAME_COMPLETE;
+            size_t dLen = tinylink::codec::cobs_decode(
+                _rawBuf, _rawIdx, _pBuf, sizeof(_pBuf));
+            _rawIdx = 0;
+
+            if (dLen >= 6) {
+                uint8_t wireType = _pBuf[0];
+
+                if (wireType == message_type_to_wire(MessageType::Handshake)) {
+                    dispatchHandshakeFrame(dLen, priorState);
+                    return false;
+                }
+                if (wireType == message_type_to_wire(MessageType::Ack) &&
+                        priorState == TinyState::AWAITING_ACK) {
+                    dispatchAckFrame(dLen, priorState);
+                    return false;
+                }
+                if (wireType == message_type_to_wire(MessageType::Log)) {
+                    dispatchLogFrame(dLen, priorState);
+                    return false;
+                }
+            }
+
+            return dispatchDataFrame(dLen, priorState);
+        }
+
         // ---- update() — Main RX / State-Machine Driver ----------------------
         //
         // Call as often as possible from the main loop (or a timer ISR-safe
@@ -428,206 +612,22 @@ namespace tinylink {
             if (!_hw->isOpen() || _hasNew) return;
 
             unsigned long now = _hw->millis();
+            tickHandshake(now);
+            tickTimeouts(now);
 
-            // Periodic Handshake re-send while awaiting the peer.
-            if (_handshakeEnabled && _state == TinyState::CONNECTING) {
-                if (now - _lastHandshakeSent >= HANDSHAKE_RETRY_MS) {
-                    _lastHandshakeSent = now;
-                    HandshakeMessage m; m.version = 0;
-                    send_internal(message_type_to_wire(MessageType::Handshake),
-                                  0, reinterpret_cast<const uint8_t*>(&m),
-                                  sizeof(m), true);
-                }
-            }
-
-            // Inter-byte timeout: discard a stalled partial frame.
-            if (_rawIdx > 0 && (now - _lastByte > _timeout)) {
-                _rawIdx = 0;
-                _stats.increment(TinyStatus::ERR_TIMEOUT);
-                if (_state == TinyState::IN_FRAME) {
-                    _state = TinyState::WAIT_FOR_SYNC;
-                }
-                // CONNECTING / AWAITING_ACK: partial frame discarded, but the
-                // connection-phase state is preserved.
-            }
-
-            // ACK timeout: no Ack received within the allowed window.
-            if (_handshakeEnabled &&
-                    _state == TinyState::AWAITING_ACK && _rawIdx == 0) {
-                if (now - _lastSent > _timeout) {
-                    _stats.increment(TinyStatus::ERR_TIMEOUT);
-                    _state = TinyState::WAIT_FOR_SYNC;
-                }
-            }
-
-            // -----------------------------------------------------------------
-            // Byte-level receive loop
-            // -----------------------------------------------------------------
             while (_hw->available() > 0) {
                 int incoming = _hw->read();
                 if (incoming < 0) break;
 
-                uint8_t c = static_cast<uint8_t>(incoming);
                 _lastByte = _hw->millis();
+                uint8_t c = static_cast<uint8_t>(incoming);
 
-                // ----------------------------------------------------------
-                // 0x00 — COBS frame delimiter
-                // ----------------------------------------------------------
                 if (c == 0x00) {
-                    if (_rawIdx >= 5) {
-                        TinyState priorState = _state;
-                        _state = TinyState::FRAME_COMPLETE;
-
-                        size_t dLen = tinylink::codec::cobs_decode(
-                            _rawBuf, _rawIdx, _pBuf, sizeof(_pBuf));
-                        _rawIdx = 0;
-
-                        // ---- Internal protocol frames ----
-                        if (dLen >= 6) {
-                            uint8_t wireType = _pBuf[0];
-
-                            // Handshake: always handled internally.
-                            if (wireType ==
-                                    message_type_to_wire(MessageType::Handshake)) {
-                                uint8_t hsBuf[sizeof(HandshakeMessage)];
-                                uint8_t rtype = 0, rseq = 0;
-                                size_t hsLen = tinylink::packet::unpack(
-                                    _pBuf, dLen, &rtype, &rseq,
-                                    hsBuf, sizeof(hsBuf));
-                                if (hsLen == sizeof(HandshakeMessage)) {
-                                    handleHandshakeMessage(hsBuf, hsLen,
-                                                           priorState);
-                                    if (_onHandshakeReceived) {
-                                        HandshakeMessage hm;
-                                        memcpy(&hm, hsBuf, sizeof(hm));
-                                        _onHandshakeReceived(hm);
-                                    }
-                                } else {
-                                    // Malformed HS — restore to idle state.
-                                    _state = (priorState == TinyState::CONNECTING ||
-                                              priorState == TinyState::AWAITING_ACK)
-                                             ? priorState
-                                             : TinyState::WAIT_FOR_SYNC;
-                                }
-                                continue;
-                            }
-
-                            // Ack: consumed when we are AWAITING_ACK.
-                            if (wireType ==
-                                    message_type_to_wire(MessageType::Ack) &&
-                                    priorState == TinyState::AWAITING_ACK) {
-                                uint8_t ackBuf[sizeof(TinyAck)];
-                                uint8_t rtype = 0, rseq = 0;
-                                size_t ackLen = tinylink::packet::unpack(
-                                    _pBuf, dLen, &rtype, &rseq,
-                                    ackBuf, sizeof(ackBuf));
-                                if (ackLen == sizeof(TinyAck)) {
-                                    _state = TinyState::WAIT_FOR_SYNC;
-                                    if (_onAckReceived) {
-                                        TinyAck ack;
-                                        memcpy(&ack, ackBuf, sizeof(ack));
-                                        _onAckReceived(ack);
-                                    }
-                                } else {
-                                    _stats.increment(TinyStatus::ERR_CRC);
-                                    _state = priorState;
-                                }
-                                continue;
-                            }
-
-                            // Log: always dispatched via dedicated callback.
-                            if (wireType ==
-                                    message_type_to_wire(MessageType::Log)) {
-                                if (_onLogReceived) {
-                                    LogMessage logMsg;
-                                    uint8_t rtype = 0, rseq = 0;
-                                    size_t logLen = tinylink::packet::unpack(
-                                        _pBuf, dLen, &rtype, &rseq,
-                                        reinterpret_cast<uint8_t*>(&logMsg),
-                                        sizeof(logMsg));
-                                    if (logLen == sizeof(LogMessage)) {
-                                        _onLogReceived(logMsg);
-                                    }
-                                }
-                                _state = (priorState == TinyState::AWAITING_ACK ||
-                                          priorState == TinyState::CONNECTING)
-                                         ? priorState
-                                         : TinyState::WAIT_FOR_SYNC;
-                                continue;
-                            }
-                        }
-
-                        // ---- User data frame dispatch ----
-                        {
-                            uint8_t rtype = 0, rseq = 0;
-                            size_t payloadLen = tinylink::packet::unpack(
-                                _pBuf, dLen, &rtype, &rseq,
-                                reinterpret_cast<uint8_t*>(&_data), sizeof(T));
-
-                            if (payloadLen == sizeof(T)) {
-                                _currType = rtype;
-                                _currSeq  = rseq;
-                                _stats.increment(TinyStatus::STATUS_OK);
-
-                                // The post-dispatch idle state.
-                                TinyState nextState =
-                                    (priorState == TinyState::AWAITING_ACK)
-                                    ? TinyState::AWAITING_ACK
-                                    : TinyState::WAIT_FOR_SYNC;
-
-                                if (_onDataReceived) {
-                                    // Callback fires while state is FRAME_COMPLETE
-                                    // so it can observe the dispatch moment.
-                                    _onDataReceived(_data);
-                                    // If the callback replied via sendData() the state
-                                    // has already advanced (e.g. to AWAITING_ACK).
-                                    // Only apply the idle nextState when the callback
-                                    // left _state unchanged (still FRAME_COMPLETE).
-                                    if (_state == TinyState::FRAME_COMPLETE) {
-                                        _state = nextState;
-                                    }
-                                } else {
-                                    // Polling: transition first, then signal.
-                                    _state  = nextState;
-                                    _hasNew = true;
-                                }
-                                return; // yield until caller calls flush()
-                            } else {
-                                _stats.increment(TinyStatus::ERR_CRC);
-                                _state = (priorState == TinyState::AWAITING_ACK ||
-                                          priorState == TinyState::CONNECTING)
-                                         ? priorState
-                                         : TinyState::WAIT_FOR_SYNC;
-                            }
-                        }
-
-                    } else {
-                        // Frame too short — discard and resync.
-                        _rawIdx = 0;
-                        if (_state == TinyState::IN_FRAME ||
-                                _state == TinyState::FRAME_COMPLETE) {
-                            _state = TinyState::WAIT_FOR_SYNC;
-                        }
-                    }
-
-                // ----------------------------------------------------------
-                // Non-zero byte — accumulate into the raw buffer
-                // ----------------------------------------------------------
+                    if (onFrameBoundary()) return; // yield until flush()
                 } else {
-                    if (_rawIdx < sizeof(_rawBuf)) {
-                        _rawBuf[_rawIdx++] = c;
-                        if (_state == TinyState::WAIT_FOR_SYNC) {
-                            _state = TinyState::IN_FRAME;
-                        }
-                    } else {
-                        _stats.increment(TinyStatus::ERR_OVERFLOW);
-                        _rawIdx = 0;
-                        if (_state == TinyState::IN_FRAME) {
-                            _state = TinyState::WAIT_FOR_SYNC;
-                        }
-                    }
+                    accumulateByte(c);
                 }
-            } // while available
+            }
         } // update()
 
 
