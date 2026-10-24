@@ -1,8 +1,12 @@
 /**
- * @file State.h
- * @brief TinyState enum — internal state machine stages for TinyLink.
+ * @file protocol/State.h
+ * @brief Independent connection, receive, and transmit states for TinyLink.
+ *
+ * TinyLink tracks connection lifecycle, receive-parser progress, and transmit
+ * acknowledgement independently. This allows normal simultaneous conditions,
+ * such as receiving a frame while awaiting acknowledgement of an earlier
+ * transmission.
  */
-
 #ifndef TINYLINK_STATE_H
 #define TINYLINK_STATE_H
 
@@ -11,36 +15,127 @@
 namespace tinylink {
 
     /**
-     * @brief State machine stages for the TinyLink connection and receive pipeline.
+     * @brief Public lifecycle state of a TinyLink connection.
      *
-     * Transitions at a glance:
-     *
-     *   begin() called
-     *       → CONNECTING    : HS(v=0) sent; waiting for peer's HS reply.
-     *                         Periodically re-sends until a reply arrives.
-     *
-     *   CONNECTING + HS(v=0) or HS(v=1) received from peer
-     *       → WAIT_FOR_SYNC : Fully connected; idle between frames.
-     *
-     *   WAIT_FOR_SYNC + first non-zero byte of an incoming frame
-     *       → IN_FRAME      : Accumulating COBS-encoded bytes.
-     *
-     *   IN_FRAME + 0x00 delimiter (frame boundary)
-     *       → FRAME_COMPLETE: Decoding and dispatching the completed frame (brief).
-     *
-     *   FRAME_COMPLETE → WAIT_FOR_SYNC (or AWAITING_ACK if an Ack is still pending)
-     *
-     *   sendData() in handshake mode
-     *       → AWAITING_ACK  : Data frame sent; waiting for an explicit Ack reply.
-     *                         Returns to WAIT_FOR_SYNC on receipt of Ack or timeout.
+     * Values are explicit because this state may be exposed through the public
+     * API. Receive-parser progress and transmit readiness do not affect this
+     * lifecycle state.
      */
-    enum class TinyState : uint8_t {
-        CONNECTING,     /**< begin() sent HS(v=0); waiting for peer's HS reply */
-        WAIT_FOR_SYNC,  /**< Connected and idle; waiting for next 0x00 frame delimiter */
-        IN_FRAME,       /**< Accumulating COBS-encoded bytes between 0x00 delimiters */
-        FRAME_COMPLETE, /**< 0x00 delimiter received; decoding and dispatching frame */
-        AWAITING_ACK    /**< Data frame sent (handshake mode); waiting for Ack reply */
+    enum class ConnectionState : uint8_t {
+        Inactive = 0,     /**< The link has not started or has been reset. */
+        Connecting = 1,   /**< Handshake negotiation is in progress. */
+        Connected = 2,    /**< A compatible peer connection is established. */
+        Incompatible = 3, /**< The peer uses an unsupported protocol version. */
+        Failed = 4        /**< Connection establishment or transport operation failed. */
     };
+
+    static_assert(sizeof(ConnectionState) == 1,
+        "ConnectionState must have an 8-bit representation");
+
+    static_assert(static_cast<uint8_t>(ConnectionState::Inactive) == 0,
+        "ConnectionState::Inactive value changed");
+
+    static_assert(static_cast<uint8_t>(ConnectionState::Connecting) == 1,
+        "ConnectionState::Connecting value changed");
+
+    static_assert(static_cast<uint8_t>(ConnectionState::Connected) == 2,
+        "ConnectionState::Connected value changed");
+
+    static_assert(static_cast<uint8_t>(ConnectionState::Incompatible) == 3,
+        "ConnectionState::Incompatible value changed");
+
+    static_assert(static_cast<uint8_t>(ConnectionState::Failed) == 4,
+        "ConnectionState::Failed value changed");
+
+    /**
+     * @brief Internal progress of the receive-frame parser.
+     *
+     * ReceiveState is independent from connection and transmit state. In
+     * particular, DiscardingFrame ignores every nonzero byte after an overflow
+     * until the next zero frame delimiter is received.
+     */
+    enum class ReceiveState : uint8_t {
+        WaitingForFrame, /**< No encoded frame bytes are currently buffered. */
+        ReceivingFrame,  /**< COBS-encoded frame bytes are being accumulated. */
+        DiscardingFrame  /**< Oversized frame bytes are ignored until delimiter. */
+    };
+
+    /**
+     * @brief Internal readiness of the stop-and-wait transmit path.
+     *
+     * A connected link may be AwaitingAck while concurrently receiving another
+     * frame. This state therefore does not represent connection lifecycle.
+     */
+    enum class TransmitState : uint8_t {
+        Ready,      /**< No acknowledged transmission is currently pending. */
+        AwaitingAck /**< One transmitted application frame awaits its ACK. */
+    };
+
+    /**
+     * @brief Determine whether a connection state represents an established link.
+     *
+     * @param state Connection lifecycle state to inspect.
+     * @return true only when @p state is ConnectionState::Connected.
+     */
+    inline bool is_connected(ConnectionState state)
+    {
+        return state == ConnectionState::Connected;
+    }
+
+    /**
+     * @brief Determine whether the transmit path has a pending acknowledgement.
+     *
+     * @param state Transmit state to inspect.
+     * @return true only when @p state is TransmitState::AwaitingAck.
+     */
+    inline bool is_awaiting_ack(TransmitState state)
+    {
+        return state == TransmitState::AwaitingAck;
+    }
+
+    /**
+     * @brief Determine whether a connected link may start another acknowledged send.
+     *
+     * @param connectionState Current connection lifecycle state.
+     * @param transmitState Current transmit readiness state.
+     * @return true when connected and no acknowledgement is pending.
+     */
+    inline bool can_send(
+        ConnectionState connectionState,
+        TransmitState transmitState)
+    {
+        return is_connected(connectionState) &&
+            transmitState == TransmitState::Ready;
+    }
+
+    /**
+     * @brief Convert a connection state to a human-readable diagnostic string.
+     *
+     * @param state Connection state to describe.
+     * @return Static diagnostic string, or "Invalid" for an undeclared value.
+     */
+    inline const char* connection_state_to_string(ConnectionState state)
+    {
+        switch (state) {
+        case ConnectionState::Inactive:
+            return "Inactive";
+
+        case ConnectionState::Connecting:
+            return "Connecting";
+
+        case ConnectionState::Connected:
+            return "Connected";
+
+        case ConnectionState::Incompatible:
+            return "Incompatible";
+
+        case ConnectionState::Failed:
+            return "Failed";
+
+        default:
+            return "Invalid";
+        }
+    }
 
 } // namespace tinylink
 
