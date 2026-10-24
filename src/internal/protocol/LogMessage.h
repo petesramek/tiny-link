@@ -53,67 +53,6 @@ namespace tinylink {
     };
 
     /**
-     * @brief Determine whether a log level is declared by the current protocol.
-     *
-     * @param level Log level to validate.
-     * @return true for TRACE through ERROR; otherwise false.
-     */
-    inline bool is_valid_log_level(LogLevel level)
-    {
-        switch (level) {
-        case LogLevel::TRACE:
-        case LogLevel::DEBUG:
-        case LogLevel::INFO:
-        case LogLevel::WARN:
-        case LogLevel::ERROR:
-            return true;
-
-        default:
-            return false;
-        }
-    }
-
-    /**
-     * @brief Convert a raw wire byte to a declared LogLevel.
-     *
-     * The destination remains unchanged when @p value is not a declared level.
-     * This helper is local to the log codec during the initial source pass.
-     *
-     * @param value Raw log-level byte.
-     * @param level Destination updated only when conversion succeeds.
-     * @return true when @p value identifies a declared log level.
-     */
-    inline bool log_level_from_wire(
-        uint8_t value,
-        LogLevel& level)
-    {
-        switch (value) {
-        case static_cast<uint8_t>(LogLevel::TRACE):
-            level = LogLevel::TRACE;
-            return true;
-
-        case static_cast<uint8_t>(LogLevel::DEBUG):
-            level = LogLevel::DEBUG;
-            return true;
-
-        case static_cast<uint8_t>(LogLevel::INFO):
-            level = LogLevel::INFO;
-            return true;
-
-        case static_cast<uint8_t>(LogLevel::WARN):
-            level = LogLevel::WARN;
-            return true;
-
-        case static_cast<uint8_t>(LogLevel::ERROR):
-            level = LogLevel::ERROR;
-            return true;
-
-        default:
-            return false;
-        }
-    }
-
-    /**
      * @brief Set log text from a nullable C string.
      *
      * The complete destination field is initialized. Null input is treated as an
