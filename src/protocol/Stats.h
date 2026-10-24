@@ -2,9 +2,9 @@
  * @file protocol/Stats.h
  * @brief Local telemetry counters recorded by TinyLink.
  *
- * TinyStats is a copyable telemetry snapshot. It records local protocol,
- * codec, transport, and state-machine events classified by TelemetryEvent.
- * Peer ACK results are not counted as local telemetry events.
+ * Stats is a copyable telemetry snapshot. It records local protocol, codec,
+ * transport, and state-machine events classified by TelemetryEvent. Peer ACK
+ * results are not counted as local telemetry events.
  */
 #ifndef TINYLINK_STATS_H
 #define TINYLINK_STATS_H
@@ -46,7 +46,7 @@ namespace tinylink {
         CountType invalidHandshakes;       /**< Malformed or unsupported handshake payloads. */
 
         /** @brief Construct a telemetry snapshot with every counter set to zero. */
-        TinyStats()
+        Stats()
             : packetsReceived(0),
             cobsDecodeFailures(0),
             checksumMismatches(0),
@@ -120,7 +120,7 @@ namespace tinylink {
          *
          * @param other Telemetry snapshot to add.
          */
-        inline void merge(const TinyStats& other)
+        inline void merge(const Stats& other)
         {
             packetsReceived = saturating_add(
                 packetsReceived,
