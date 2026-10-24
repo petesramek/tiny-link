@@ -1,104 +1,182 @@
-﻿/**
- * @file TinySTM32HALAdapter.h
- * @brief STM32 Hardware Abstraction Layer (HAL) adapter for TinyLink.
+/**
+ * @file adapters/TinySTM32HALAdapter.h
+ * @brief TinyLink transport adapter for an STM32 HAL UART handle.
  *
- * This adapter wraps an STM32 HAL UART handle and exposes the TinyLink
- * adapter interface.
+ * The adapter is non-owning. The supplied UART handle and its peripheral
+ * configuration must remain valid for the entire lifetime of the adapter and
+ * every TinyLink instance that uses it.
+ *
+ * The application must include the correct STM32 family HAL header before this
+ * file so UART_HandleTypeDef, HAL UART functions, and UART flags are available.
+ *
+ * The current TinyLink adapter contract does not report write results. HAL
+ * transmit statuses are therefore intentionally ignored.
  */
+#ifndef TINYLINK_ADAPTERS_TINYSTM32HALADAPTER_H
+#define TINYLINK_ADAPTERS_TINYSTM32HALADAPTER_H
 
-#ifndef TINY_STM32_HAL_ADAPTER_H
-#define TINY_STM32_HAL_ADAPTER_H
-
- // The user must ensure the correct family header (e.g., stm32f4xx_hal.h)
- // is included in their project before including this file.
 #if defined(HAL_UART_MODULE_ENABLED) && defined(STM32)
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 namespace tinylink {
 
     /**
-     * @class TinySTM32HALAdapter
-     * @brief Abstraction for STM32 HAL UART handles.
+     * @brief Non-owning polling adapter over an STM32 HAL UART handle.
      *
-     * Adapter contract (required by TinyLink):
-     *   - bool          isOpen();
-     *   - int           available();
-     *   - int           read();
-     *   - void          write(uint8_t);
-     *   - void          write(const uint8_t*, size_t);
-     *   - unsigned long millis();
+     * The adapter does not initialize, configure, start, stop, or own the UART.
+     * Reads and writes use blocking HAL polling calls with bounded timeouts.
      */
     class TinySTM32HALAdapter {
     private:
-        UART_HandleTypeDef* _huart; /**< Pointer to an initialized HAL UART handle */
+        UART_HandleTypeDef* _uart;
 
     public:
         /**
-         * @brief Construct a new TinySTM32HALAdapter.
-         * @param huart Pointer to the HAL UART handle (e.g., &huart1).
+         * @brief Construct an adapter over an existing STM32 HAL UART handle.
+         *
+         * @param uart Initialized UART handle. The caller must keep the handle and
+         * its Instance valid for the lifetime of this adapter.
          */
-        explicit TinySTM32HALAdapter(UART_HandleTypeDef* huart)
-            : _huart(huart) {
+        explicit TinySTM32HALAdapter(
+            UART_HandleTypeDef* uart)
+            : _uart(uart)
+        {}
+
+        /**
+         * @brief Determine whether a UART handle and peripheral instance are bound.
+         *
+         * This check does not verify peripheral clocks, GPIO configuration, UART
+         * state, or physical connectivity.
+         *
+         * @return true when the handle and its Instance pointer are non-null.
+         */
+        inline bool isOpen() const
+        {
+            return _uart != nullptr &&
+                _uart->Instance != nullptr;
         }
 
         /**
-         * @brief Returns true if the UART handle and instance are valid.
+         * @brief Determine whether the UART receive-data register is nonempty.
+         *
+         * The adapter exposes only zero or one because it does not own a software
+         * receive buffer. The flag may change before read() executes.
+         *
+         * @return 1 when RXNE is set; otherwise zero.
          */
-        inline bool isOpen() {
-            return (_huart != nullptr && _huart->Instance != nullptr);
-        }
-
-        /**
-         * @brief Checks the RXNE (Receive Not Empty) flag.
-         * @return 1 if at least one byte is available, 0 otherwise.
-         */
-        inline int available() {
-            if (!isOpen()) return 0;
-            return (__HAL_UART_GET_FLAG(_huart, UART_FLAG_RXNE) != RESET) ? 1 : 0;
-        }
-
-        /**
-         * @brief Reads a single byte using a short-timeout polling receive.
-         * @return Byte in range [0,255], or -1 if no data is available or on error.
-         */
-        inline int read() {
-            if (!isOpen()) return -1;
-
-            uint8_t data = 0;
-            if (HAL_UART_Receive(_huart, &data, 1, 1) == HAL_OK) {
-                return static_cast<int>(data);
+        inline int available() const
+        {
+            if (!isOpen()) {
+                return 0;
             }
-            return -1;
+
+            return __HAL_UART_GET_FLAG(
+                _uart,
+                UART_FLAG_RXNE) != RESET
+                ? 1
+                : 0;
         }
 
         /**
-         * @brief Transmits a single byte via HAL polling.
+         * @brief Read one byte using HAL polling with a one-millisecond timeout.
+         *
+         * HAL timeout and error statuses are represented as -1 by the current
+         * TinyLink adapter contract.
+         *
+         * @return Byte in the range 0 through 255, or -1 when no byte was read.
          */
-        inline void write(uint8_t c) {
-            if (!isOpen()) return;
-            HAL_UART_Transmit(_huart, &c, 1, 10);
+        inline int read()
+        {
+            if (!isOpen()) {
+                return -1;
+            }
+
+            uint8_t value = 0;
+
+            if (HAL_UART_Receive(
+                _uart,
+                &value,
+                1,
+                1) != HAL_OK) {
+                return -1;
+            }
+
+            return static_cast<int>(value);
         }
 
         /**
-         * @brief Transmits a buffer of bytes via HAL polling.
+         * @brief Transmit one byte using HAL polling.
+         *
+         * The call may block for up to ten milliseconds. Its HAL status is ignored
+         * because the current TinyLink adapter contract does not report failures.
+         *
+         * @param value Byte to transmit.
          */
-        inline void write(const uint8_t* b, size_t l) {
-            if (!isOpen() || !b || l == 0) return;
-            HAL_UART_Transmit(_huart, const_cast<uint8_t*>(b),
-                static_cast<uint16_t>(l), 100);
+        inline void write(uint8_t value)
+        {
+            if (!isOpen()) {
+                return;
+            }
+
+            static_cast<void>(
+                HAL_UART_Transmit(
+                    _uart,
+                    &value,
+                    1,
+                    10));
         }
 
         /**
-         * @brief Returns the current system tick count in milliseconds.
+         * @brief Transmit a byte sequence using HAL polling.
+         *
+         * The call may block for up to 100 milliseconds. Its HAL status is ignored
+         * because the current TinyLink adapter contract does not report failures.
+         * STM32 HAL accepts a 16-bit transfer length, so larger requests are
+         * rejected rather than truncated. A null pointer is valid only when
+         * @p length is zero.
+         *
+         * @param data Bytes to transmit, or nullptr when @p length is zero.
+         * @param length Number of bytes to transmit.
          */
-        inline unsigned long millis() {
-            return HAL_GetTick();
+        inline void write(
+            const uint8_t* data,
+            size_t length)
+        {
+            if (!isOpen() || length == 0) {
+                return;
+            }
+
+            if (!data || length > UINT16_MAX) {
+                return;
+            }
+
+            static_cast<void>(
+                HAL_UART_Transmit(
+                    _uart,
+                    const_cast<uint8_t*>(data),
+                    static_cast<uint16_t>(length),
+                    100));
+        }
+
+        /**
+         * @brief Return the STM32 HAL system tick in milliseconds.
+         *
+         * HAL_GetTick() normally wraps at the width of uint32_t. TinyLink uses
+         * unsigned elapsed-time subtraction, which supports this rollover.
+         *
+         * @return Current HAL system tick in milliseconds.
+         */
+        inline unsigned long millis() const
+        {
+            return static_cast<unsigned long>(
+                HAL_GetTick());
         }
     };
 
 } // namespace tinylink
 
 #endif // defined(HAL_UART_MODULE_ENABLED) && defined(STM32)
-#endif // TINY_STM32_HAL_ADAPTER_H
+
+#endif // TINYLINK_ADAPTERS_TINYSTM32HALADAPTER_H
