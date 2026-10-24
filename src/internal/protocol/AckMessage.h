@@ -13,22 +13,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "protocol/Status.h"
+#include "protocol/AckResult.h"
 
 namespace tinylink {
 
     /** @brief Size of an encoded ACK payload in bytes. */
     static const size_t ACK_MESSAGE_WIRE_SIZE = 1;
-
-    /**
-     * @brief Semantic result carried by an ACK frame.
-     *
-     * This type is independent of the wire representation. The packet-header
-     * sequence identifies the frame to which this result applies.
-     */
-    struct AckMessage {
-        AckResult result; /**< Result reported for the acknowledged frame. */
-    };
 
     /** @brief Result of encoding or decoding an ACK payload. */
     enum class AckMessageCodecStatus : uint8_t {
@@ -40,15 +30,17 @@ namespace tinylink {
     };
 
     /**
-     * @brief Encode an ACK message into its one-byte wire payload.
+     * @brief Encode an ACK result into its one-byte wire payload.
      *
-     * @param message Semantic ACK message to encode.
+     * The output buffer remains unchanged when encoding fails.
+     *
+     * @param result ACK result to encode.
      * @param output Destination buffer.
      * @param outputCapacity Capacity of @p output in bytes.
      * @return Codec status describing the result.
      */
     inline AckMessageCodecStatus encode_ack_message(
-        const AckMessage& message,
+        AckResult result,
         uint8_t* output,
         size_t outputCapacity)
     {
@@ -60,7 +52,7 @@ namespace tinylink {
             return AckMessageCodecStatus::OutputTooSmall;
         }
 
-        const uint8_t rawResult = ack_result_to_wire(message.result);
+        const uint8_t rawResult = ack_result_to_wire(result);
         AckResult validatedResult = AckResult::Unknown;
 
         if (!ack_result_from_wire(rawResult, validatedResult)) {
@@ -78,13 +70,13 @@ namespace tinylink {
      *
      * @param input Encoded ACK payload.
      * @param inputLength Number of bytes in @p input.
-     * @param message Destination updated only after complete validation.
+     * @param result Destination updated only after complete validation.
      * @return Codec status describing the result.
      */
     inline AckMessageCodecStatus decode_ack_message(
         const uint8_t* input,
         size_t inputLength,
-        AckMessage& message)
+        AckResult& result)
     {
         if (!input) {
             return AckMessageCodecStatus::InvalidArgument;
@@ -94,13 +86,13 @@ namespace tinylink {
             return AckMessageCodecStatus::InvalidLength;
         }
 
-        AckResult result = AckResult::Unknown;
+        AckResult decodedResult = AckResult::Unknown;
 
-        if (!ack_result_from_wire(input[0], result)) {
+        if (!ack_result_from_wire(input[0], decodedResult)) {
             return AckMessageCodecStatus::InvalidResult;
         }
 
-        message.result = result;
+        result = decodedResult;
         return AckMessageCodecStatus::Success;
     }
 
