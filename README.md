@@ -274,7 +274,7 @@ Serial.print("Timeouts: "); Serial.println(stats.timeouts);
 
 `examples/`: Ready-to-run duplex, callback, and health-monitoring demos.
 
-`test/`: Native C++ unit tests using `TinyTestAdapter`.
+`test/`: Native C++ unit tests using Unity.
 
 ## 🔄 Migration Guide
 
