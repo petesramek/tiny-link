@@ -77,12 +77,12 @@ Use the [Feature Request](.github/ISSUE_TEMPLATE/feature_request.md) issue templ
 
 ## Development Setup
 
-TinyLink can be built and tested natively (no microcontroller required) via **PlatformIO**.
+TinyLink can be built and tested natively (no microcontroller required) via **PlatformIO** and Unity.
 
 ### Prerequisites
 
 - [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/index.html) (CLI or IDE)
-- A C++17-capable compiler (GCC ≥ 7, Clang ≥ 5, or MSVC 2017+)
+- A C++11-capable compiler (GCC ≥ 7, Clang ≥ 5, or MSVC 2017+)
 
 ### Build
 
@@ -104,7 +104,7 @@ test/             Native C++ unit tests
 
 ## Running Tests
 
-Tests live in the `test/` directory and use the `TinyTestAdapter` helper class. Run all native tests with:
+Tests live in the `test/` directory and use Unity. Run all native tests with:
 
 ```bash
 pio test -e native
