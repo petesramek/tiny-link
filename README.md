@@ -265,6 +265,11 @@ void onReceive(const SensorMessage& data) {
 }
 ```
 
+`sendAck()` returns `false` until a valid application data frame has been
+accepted. Its received sequence remains available after callback delivery and
+after polling code calls `read()` or `flush()`. Calling `begin()`,
+`reset()`, or accepting a new handshake invalidates that sequence.
+
 ### Three Update Modes, Side by Side
 
 | Example folder                     | update() driven by   | ISR-safe callbacks? | HW interrupt? |
@@ -282,11 +287,15 @@ void onReceive(const SensorMessage& data) {
 Monitor link health in real-time to diagnose wiring issues:
 
 ```cpp
-const TinyStats& stats = link.getStats();
-Serial.print("Packets: "); Serial.println(stats.packets);
-Serial.print("CRC Errors: "); Serial.println(stats.crcErrs);
-Serial.print("Timeouts: "); Serial.println(stats.timeouts);
+const Stats stats = link.stats();
+Serial.print("Packets: "); Serial.println(stats.packetsReceived);
+Serial.print("Checksum Errors: "); Serial.println(stats.checksumMismatches);
+Serial.print("ACK Timeouts: "); Serial.println(stats.ackTimeouts);
 ```
+
+The engine records telemetry through `Stats::increment(TelemetryEvent)`.
+Counters saturate at `UINT32_MAX` rather than wrapping, and `Stats::merge()`
+uses the same saturating behavior.
 
 ## 📂 Project Structure
 

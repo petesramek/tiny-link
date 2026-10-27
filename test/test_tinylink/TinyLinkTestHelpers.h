@@ -7,6 +7,20 @@
 #include "FakeAdapter.h"
 #include "TinyLink.h"
 
+#ifdef TINYLINK_NATIVE_TEST
+namespace tinylink {
+
+    struct TinyLinkTestAccess {
+        template <typename T, typename Adapter>
+        static void setStats(TinyLink<T, Adapter>& link, const Stats& stats)
+        {
+            link._stats = stats;
+        }
+    };
+
+} // namespace tinylink
+#endif
+
 namespace tinylink_test {
 
     inline bool queueFrame(
