@@ -51,7 +51,15 @@ receiver's inter-byte timeout discard the incomplete frame before sending anothe
 
 ### 1. Define your Data
 
-Both devices must share an identical `struct` with identical size that is ensured by `__attribute__((packed))`.
+TinyLink treats a consumer-defined payload as an opaque sequence of bytes and requires its type
+to be trivially copyable before copying its object representation. This is only a minimum
+object-safety requirement: raw object memory is not inherently a portable wire format.
+
+Peers must agree on the payload layout. Raw object representations can differ across platforms
+because of padding, endianness, alignment, enum representation, or ABI. If peers may differ in
+any of these, serialize fields explicitly into a defined wire format and deserialize them on
+receipt. Packing a structure can control some layout details on a given compiler, but does not
+make its object representation portable.
 
 ```cpp
 struct MyData {
@@ -356,6 +364,19 @@ dbg.level = 1;
 tinylink::debugmessage_set_text(dbg, "boot complete");
 link.send(message_type_to_wire(tinylink::MessageType::Debug), dbg);
 ```
+
+## Testing
+
+Run the native unit suite and the dedicated payload compile-contract checks:
+
+```sh
+pio test -e native
+python scripts/check_payload_compile_contract.py
+```
+
+The compile-contract check uses a native GNU or Clang C++11 compiler. It verifies that a valid
+payload, including a 64-byte payload at TinyLink's maximum, compiles, and that a payload with a
+non-trivial destructor fails specifically at TinyLink's trivially-copyable assertion.
 
 ## 📜 License
 This project is licensed under the MIT License.

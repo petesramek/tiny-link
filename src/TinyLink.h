@@ -36,6 +36,19 @@
 
 namespace tinylink {
 
+    namespace detail {
+#ifdef __AVR__
+        // The AVR toolchain's libstdc++ does not provide <type_traits>.
+        template <typename T>
+        struct is_trivially_copyable {
+            static const bool value = __is_trivially_copyable(T);
+        };
+#else
+        template <typename T>
+        struct is_trivially_copyable : std::is_trivially_copyable<T> {};
+#endif
+    }
+
 #ifndef __AVR__
 /** @brief Compile-time validation of the TinyLink transport adapter contract. */
 template <typename Adapter>
@@ -80,6 +93,9 @@ using adapter_check_t = int;
  */
 template <typename T, typename Adapter, adapter_check_t<Adapter> = 0>
 class TinyLink {
+    static_assert(detail::is_trivially_copyable<T>::value,
+                  "TinyLink: Payload must be trivially copyable.");
+
 public:
     /** @brief Application payload callback. */
     typedef void (*DataCallback)(const T& data);
