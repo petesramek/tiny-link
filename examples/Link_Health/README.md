@@ -4,8 +4,8 @@ This example demonstrates how to monitor the physical integrity of your serial c
 
 ## 🌟 Features
 
-**Error Tracking**: Monitors `crcErrs` caused by electrical noise or loose wires.
-**Timeout Detection**: Detects `timeouts` when a packet starts but is never finished (e.g., a device was unplugged mid-transmission).
+**Error Tracking**: Monitors `crc` caused by electrical noise or loose wires.
+**Timeout Detection**: Detects `timeout` when a packet starts but is never finished (e.g., a device was unplugged mid-transmission).
 **Packet Counting**: Tracks total `packets` successfully verified by the **Fletcher-16** algorithm.
 
 ## 📂 Code Overview
@@ -22,11 +22,11 @@ The example uses a simple timer to print a **Health Report** every 5 seconds. Th
 
 **Symptom**         | **High Metric**   | **Likely Cause**
 **No Data**         | 0 Packets       | TX/RX swapped or incorrect Baud Rate.
-**Garbage Data**    | High `crcErrs`    | Bad Ground connection or EMI noise.
-**Flickering Link** | High `timeouts`   | Serial buffer overflow or loose "jumping" wire.
+**Garbage Data**    | High `crc`         | Bad Ground connection or EMI noise.
+**Flickering Link** | High `timeout`     | Serial buffer overflow or loose "jumping" wire.
 
 ## 🚀 How to Run
 
 Upload Link_Health.ino to your **MH-Tiny88** or **ESP-M3**.
 Open the Serial Monitor at **9600 Baud**.
-Try touching the RX/TX wires or briefly unplugging them to see the `crcErrs` and `timeouts` counters react in real-time.
+Try touching the RX/TX wires or briefly unplugging them to see the `crc` and `timeout` counters react in real-time.

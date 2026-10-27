@@ -337,7 +337,7 @@ void test_zero_length_header_rejection(void) {
     link.update();
     
     // dLen = 5. PLAIN_SIZE = 13.
-    // 5 != 13 triggers the 'else { _stats.crcErrs++; }' in TinyLink.h
+    // 5 != 13 triggers the CrcError telemetry increment in TinyLink.h.
     TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
@@ -929,9 +929,31 @@ void test_crc_endian_sensitivity(void) {
     TEST_ASSERT_EQUAL_UINT32(1, link.getStats().crc);
 }
 
+/** @test Engine packet telemetry saturates at UINT32_MAX instead of wrapping. */
+void test_engine_packet_counter_saturates(void) {
+    const tinylink::TinyStats::CountType maximum =
+        static_cast<tinylink::TinyStats::CountType>(-1);
+    tinylink::TinyStats& stats =
+        const_cast<tinylink::TinyStats&>(link.getStats());
+    stats.packets = maximum - 1;
+
+    TestPayload data = { 7, 7.0f };
+    TEST_ASSERT_TRUE(link.sendData(
+        static_cast<uint8_t>(tinylink::MessageType::Data), data));
+    while (adapter.available() > 0 && !link.available()) link.update();
+    TEST_ASSERT_EQUAL_UINT32(maximum, link.getStats().packets);
+    link.flush();
+
+    TEST_ASSERT_TRUE(link.sendData(
+        static_cast<uint8_t>(tinylink::MessageType::Data), data));
+    while (adapter.available() > 0 && !link.available()) link.update();
+    TEST_ASSERT_EQUAL_UINT32(maximum, link.getStats().packets);
+}
+
 void register_protocol_tests(void) {
     // --- Core Protocol & Asynchronous Events ---
     RUN_TEST(test_cobs_loopback);                /**< Basic encode/decode/verify pipeline */
+    RUN_TEST(test_engine_packet_counter_saturates);
     RUN_TEST(test_cobs_zero_payload);            /**< COBS transparency with all-zero data */
     RUN_TEST(test_async_callback);               /**< Asynchronous event trigger verification */
     RUN_TEST(test_callback_burst);               /**< Handling multiple packets in one update cycle */

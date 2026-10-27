@@ -23,12 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- TinyStats counters now use saturating increments and merges, so engine telemetry cannot wrap.
+- `sendAck()` now rejects calls until a valid application frame has been received and echoes
+  that frame's sequence even after callbacks, polling consumption, or local transmissions.
 - TinyLink now checks complete adapter writes for data, ACK, log, and handshake frames.
   `sendData()` and `begin()` report write failure; incomplete data output does not consume
   a transmit sequence or enter `AWAITING_ACK`, and a failed handshake response does not
   complete the connection transition.
 
 ### Added
+- `TelemetryEvent` mapping for centralized TinyStats increments and regression tests for counter
+  saturation and received-sequence ACK validity.
 - `src/TinyWriteResult.h`: allocation-free adapter write outcome model, including complete,
   partial, failed, and zero-length results; all built-in transports now report platform writes.
 - Deterministic unit tests for complete, partial, failed, and zero-length adapter write results.

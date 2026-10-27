@@ -134,8 +134,10 @@ namespace tinylink {
 
         uint8_t       _currType;
         uint8_t       _currSeq;
+        uint8_t       _receivedSeq; ///< Sequence of the last accepted application frame
         uint8_t       _nextSeq;
         bool          _hasNew;
+        bool          _hasReceivedSequence; ///< Whether _receivedSeq may be acknowledged
         unsigned long _lastByte;
         unsigned long _timeout;
 
@@ -165,7 +167,7 @@ namespace tinylink {
             size_t plainLen = tinylink::packet::pack(wireType, seq, payload, len,
                                                      pBuf, MAX_PLAIN);
             if (plainLen == 0) {
-                if (!isInternal) _stats.increment(TinyStatus::ERR_CRC);
+                if (!isInternal) _stats.increment(TelemetryEvent::CrcError);
                 return false;
             }
             size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen,
@@ -243,6 +245,7 @@ namespace tinylink {
             // For both HS(v=0) and HS(v=1): we are now connected.
             // Preserve AWAITING_ACK if a data ACK is still pending;
             // otherwise move to the connected idle state.
+            _hasReceivedSequence = false;
             _state = (fromState == TinyState::AWAITING_ACK)
                      ? TinyState::AWAITING_ACK
                      : TinyState::WAIT_FOR_SYNC;
@@ -261,8 +264,8 @@ namespace tinylink {
             : _hw(&hw), _data(), _stats(),
               _onDataReceived(nullptr), _onLogReceived(nullptr),
               _onHandshakeReceived(nullptr), _onAckReceived(nullptr),
-              _rawIdx(0), _currType(0), _currSeq(0), _nextSeq(0),
-              _hasNew(false), _lastByte(0), _timeout(250),
+              _rawIdx(0), _currType(0), _currSeq(0), _receivedSeq(0), _nextSeq(0),
+              _hasNew(false), _hasReceivedSequence(false), _lastByte(0), _timeout(250),
               _state(TinyState::WAIT_FOR_SYNC),
               _handshakeEnabled(false), _lastHandshakeSent(0), _lastSent(0)
         {
@@ -380,6 +383,7 @@ namespace tinylink {
          */
         bool begin() {
             if (!_hw->isOpen()) return false;
+            _hasReceivedSequence = false;
             _handshakeEnabled = true;
             _state            = TinyState::CONNECTING;
             _lastHandshakeSent = _hw->millis();
@@ -403,7 +407,9 @@ namespace tinylink {
             _hasNew            = false;
             _currType          = 0;
             _currSeq           = 0;
+            _receivedSeq       = 0;
             _nextSeq           = 0;
+            _hasReceivedSequence = false;
             _lastByte          = 0;
             _lastHandshakeSent = 0;
             _lastSent          = 0;
@@ -472,7 +478,7 @@ namespace tinylink {
         void tickTimeouts(unsigned long now) {
             if (_rawIdx > 0 && (now - _lastByte > _timeout)) {
                 _rawIdx = 0;
-                _stats.increment(TinyStatus::ERR_TIMEOUT);
+                _stats.increment(TelemetryEvent::Timeout);
                 if (_state == TinyState::IN_FRAME) {
                     _state = TinyState::WAIT_FOR_SYNC;
                 }
@@ -482,7 +488,7 @@ namespace tinylink {
             if (_handshakeEnabled &&
                     _state == TinyState::AWAITING_ACK && _rawIdx == 0 &&
                     now - _lastSent > _timeout) {
-                _stats.increment(TinyStatus::ERR_TIMEOUT);
+                _stats.increment(TelemetryEvent::Timeout);
                 _state = TinyState::WAIT_FOR_SYNC;
             }
         }
@@ -495,7 +501,7 @@ namespace tinylink {
                     _state = TinyState::IN_FRAME;
                 }
             } else {
-                _stats.increment(TinyStatus::ERR_OVERFLOW);
+                _stats.increment(TelemetryEvent::Overflow);
                 _rawIdx = 0;
                 if (_state == TinyState::IN_FRAME) {
                     _state = TinyState::WAIT_FOR_SYNC;
@@ -535,7 +541,7 @@ namespace tinylink {
                     _onAckReceived(ack);
                 }
             } else {
-                _stats.increment(TinyStatus::ERR_CRC);
+                _stats.increment(TelemetryEvent::CrcError);
                 _state = priorState;
             }
         }
@@ -564,14 +570,16 @@ namespace tinylink {
                 reinterpret_cast<uint8_t*>(&_data), sizeof(T));
 
             if (payloadLen != sizeof(T)) {
-                _stats.increment(TinyStatus::ERR_CRC);
+                _stats.increment(TelemetryEvent::CrcError);
                 _state = restoreState(priorState);
                 return false;
             }
 
             _currType = rtype;
             _currSeq  = rseq;
-            _stats.increment(TinyStatus::STATUS_OK);
+            _receivedSeq = rseq;
+            _hasReceivedSequence = true;
+            _stats.increment(TelemetryEvent::PacketReceived);
 
             // Post-dispatch idle state: preserve AWAITING_ACK if a data ACK
             // is still pending for a frame we sent earlier.
@@ -691,7 +699,7 @@ namespace tinylink {
                 reinterpret_cast<const uint8_t*>(&payload), sizeof(T),
                 pBuf, TX_PLAIN);
             if (plainLen == 0) {
-                _stats.increment(TinyStatus::ERR_CRC);
+                _stats.increment(TelemetryEvent::CrcError);
                 return false;
             }
             size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen,
@@ -727,15 +735,17 @@ namespace tinylink {
         // AWAITING_ACK, so this call has no observable effect.
         //
         // @param result  Status code to include in the ACK (default STATUS_OK).
-        // @return true if the complete ACK frame was accepted; false if the
-        //         port is closed or output was incomplete.
+        // @return true if the complete ACK frame was accepted; false if no
+        //         valid application frame has been received, the port is closed,
+        //         or output was incomplete.
         //
         bool sendAck(TinyStatus result = TinyStatus::STATUS_OK) {
+            if (!_hasReceivedSequence) return false;
             TinyAck ack;
-            ack.seq    = _currSeq;   // echo the sequence of the last received frame
+            ack.seq    = _receivedSeq;
             ack.result = result;
             return send_internal(
-                message_type_to_wire(MessageType::Ack), _currSeq,
+                message_type_to_wire(MessageType::Ack), _receivedSeq,
                 reinterpret_cast<const uint8_t*>(&ack), sizeof(ack),
                 /*isInternal=*/true);
         }

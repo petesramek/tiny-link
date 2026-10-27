@@ -46,6 +46,72 @@ void test_stats_increment(void) {
     TEST_ASSERT_EQUAL_UINT32(1, s.unknown);
 }
 
+/** @test Telemetry events map to their documented counters. */
+void test_stats_telemetry_event_mapping(void) {
+    TinyStats s;
+    s.increment(TelemetryEvent::PacketReceived);
+    s.increment(TelemetryEvent::CrcError);
+    s.increment(TelemetryEvent::Timeout);
+    s.increment(TelemetryEvent::Overflow);
+    s.increment(TelemetryEvent::Busy);
+    s.increment(TelemetryEvent::Processing);
+    s.increment(TelemetryEvent::Unknown);
+
+    TEST_ASSERT_EQUAL_UINT32(1, s.packets);
+    TEST_ASSERT_EQUAL_UINT32(1, s.crc);
+    TEST_ASSERT_EQUAL_UINT32(1, s.timeout);
+    TEST_ASSERT_EQUAL_UINT32(1, s.overflow);
+    TEST_ASSERT_EQUAL_UINT32(1, s.busy);
+    TEST_ASSERT_EQUAL_UINT32(1, s.processing);
+    TEST_ASSERT_EQUAL_UINT32(1, s.unknown);
+}
+
+/** @test Increments and merges saturate instead of wrapping. */
+void test_stats_saturation(void) {
+    const TinyStats::CountType maximum =
+        static_cast<TinyStats::CountType>(-1);
+    TinyStats s;
+    s.packets = maximum;
+    s.crc = maximum;
+    s.timeout = maximum;
+    s.overflow = maximum;
+    s.busy = maximum;
+    s.processing = maximum;
+    s.unknown = maximum;
+
+    s.increment(TelemetryEvent::PacketReceived);
+    s.increment(TelemetryEvent::CrcError);
+    s.increment(TelemetryEvent::Timeout);
+    s.increment(TelemetryEvent::Overflow);
+    s.increment(TelemetryEvent::Busy);
+    s.increment(TelemetryEvent::Processing);
+    s.increment(TelemetryEvent::Unknown);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.packets);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.crc);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.timeout);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.overflow);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.busy);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.processing);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.unknown);
+
+    TinyStats other;
+    other.increment(TelemetryEvent::PacketReceived);
+    other.increment(TelemetryEvent::CrcError);
+    other.increment(TelemetryEvent::Timeout);
+    other.increment(TelemetryEvent::Overflow);
+    other.increment(TelemetryEvent::Busy);
+    other.increment(TelemetryEvent::Processing);
+    other.increment(TelemetryEvent::Unknown);
+    s.merge(other);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.packets);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.crc);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.timeout);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.overflow);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.busy);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.processing);
+    TEST_ASSERT_EQUAL_UINT32(maximum, s.unknown);
+}
+
 /** @test countFor() returns the same value as the corresponding field. */
 void test_stats_count_for(void) {
     TinyStats s;
@@ -107,6 +173,8 @@ void test_stats_merge(void) {
 void register_stats_tests(void) {
     RUN_TEST(test_stats_default_zero);
     RUN_TEST(test_stats_increment);
+    RUN_TEST(test_stats_telemetry_event_mapping);
+    RUN_TEST(test_stats_saturation);
     RUN_TEST(test_stats_count_for);
     RUN_TEST(test_stats_clear);
     RUN_TEST(test_stats_double_clear);
