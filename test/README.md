@@ -39,7 +39,7 @@ All three prompts were run sequentially in one GitHub Copilot session. Each prom
 ### Session details
 
 - Mode: Autopilot
-- Model: Auto
+- Model: Auto (Mostly GPT-6.0 Astra from what I saw)
 - Reasoning: Balanced
 - AI credits used: 25.9
 - Cached tokens: 13.6M
