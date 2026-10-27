@@ -1,11 +1,3 @@
-/**
- * @file test_posix_adapter.cpp
- * @brief POSIX adapter setup, I/O, failure cleanup, and ownership tests.
- *
- * This file is excluded on Windows; syscall wrappers inject deterministic
- * failures while delegating ordinary operations to the host POSIX APIs.
- */
-
 #if !defined(_WIN32)
 
 #define _XOPEN_SOURCE 600
@@ -13,7 +5,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 #include <termios.h>
 #include <time.h>
@@ -24,7 +15,6 @@
 
 namespace posix_adapter_test {
 
-/** Termios setup stage at which a wrapper should inject a one-shot failure. */
 enum FailureStage {
     NoFailure,
     FailInputSpeed,
@@ -32,10 +22,10 @@ enum FailureStage {
     FailCommit
 };
 
-static FailureStage failureStage = NoFailure; /**< Selected setup failure; reset per scenario. */
-static int trackedFd = -1; /**< Last descriptor returned by the wrapped open(). */
-static bool forceWriteResult = false; /**< When true, bypass the real write syscall. */
-static ssize_t forcedWriteResult = 0; /**< Synthetic write return value when forced. */
+static FailureStage failureStage = NoFailure;
+static int trackedFd = -1;
+static bool forceWriteResult = false;
+static ssize_t forcedWriteResult = 0;
 
 }
 
@@ -54,8 +44,6 @@ static ssize_t posix_test_write(int fd, const void* buffer, size_t length);
 #define cfsetospeed posix_test_cfsetospeed
 #define tcsetattr posix_test_tcsetattr
 #define write posix_test_write
-// Redirect only adapter calls to wrappers; each wrapper delegates to the real
-// POSIX function unless its test control explicitly requests fault injection.
 #include "adapters/TinyPosixAdapter.h"
 #undef write
 #undef tcsetattr
@@ -76,12 +64,7 @@ static_assert(!std::is_copy_assignable<TinyPosixAdapter>::value,
 
 namespace posix_adapter_test {
 
-/**
- * @brief Restore every syscall override and descriptor observation to baseline.
- *
- * Each failure scenario must opt in again after reset so injected failures do
- * not leak between cases or affect ordinary pseudo-terminal traffic.
- */
+/** @brief Clears syscall overrides before each independent adapter scenario. */
 static void resetOverrides() {
     failureStage = NoFailure;
     trackedFd = -1;
@@ -98,14 +81,11 @@ static bool descriptorIsClosed(int fd) {
 /**
  * @class PtyFixture
  * @brief Owns a pseudo-terminal master and exposes its unlocked slave path.
- *
- * The slave path is bounded by the fixed buffer because ptsname() returns a
- * process-owned string; this fixture copies it before subsequent PTY use.
  */
 class PtyFixture {
 public:
-    int master; /**< Owned PTY master descriptor, or -1 when setup failed. */
-    char slavePath[128]; /**< Bounded copy of the PTY slave path. */
+    int master;
+    char slavePath[128];
 
     PtyFixture() : master(-1), slavePath() {
         master = posix_openpt(O_RDWR | O_NOCTTY | O_NONBLOCK);
@@ -136,22 +116,19 @@ public:
 
 }
 
-/**
- * @brief Capture the adapter-owned descriptor and otherwise perform real open().
- * @note Wrapping records ownership for cleanup assertions; it does not mock open.
- */
+/** @brief Captures the descriptor opened by the adapter while calling POSIX open. */
 static int posix_test_open(const char* path, int flags) {
     const int fd = ::open(path, flags);
     posix_adapter_test::trackedFd = fd;
     return fd;
 }
 
-/** @brief Delegate to the real close() so descriptor-ownership checks stay meaningful. */
+/** @brief Closes the adapter descriptor through the real POSIX close function. */
 static int posix_test_close(int fd) {
     return ::close(fd);
 }
 
-/** @brief Delegate to real tcgetattr(); this test suite injects no read failure. */
+/** @brief Delegates termios reads, with no synthetic failure override. */
 static int posix_test_tcgetattr(int fd, struct termios* settings) {
     return ::tcgetattr(fd, settings);
 }
@@ -184,11 +161,7 @@ static int posix_test_tcsetattr(
     return ::tcsetattr(fd, action, settings);
 }
 
-/**
- * @brief Return a forced write result or delegate to the real write syscall.
- * @note Forced results model partial/error outcomes that a PTY cannot reliably
- *       produce on demand; resetOverrides() restores real I/O behavior.
- */
+/** @brief Returns a requested synthetic write result or delegates to POSIX write. */
 static ssize_t posix_test_write(int fd, const void* buffer, size_t length) {
     if (posix_adapter_test::forceWriteResult)
         return posix_adapter_test::forcedWriteResult;
@@ -239,14 +212,9 @@ void test_posix_speed_configuration_failures_close_descriptor(void) {
             fd = posix_adapter_test::trackedFd;
             isOpen = adapter.isOpen();
         }
-        char diagnostic[112];
-        snprintf(diagnostic, sizeof(diagnostic),
-            "configuration stage index %u (stage=%d) must fail and release fd",
-            static_cast<unsigned>(i), static_cast<int>(stages[i]));
-        TEST_ASSERT_FALSE_MESSAGE(isOpen, diagnostic);
-        TEST_ASSERT_TRUE_MESSAGE(fd >= 0, diagnostic);
-        TEST_ASSERT_TRUE_MESSAGE(posix_adapter_test::descriptorIsClosed(fd),
-            diagnostic);
+        TEST_ASSERT_FALSE(isOpen);
+        TEST_ASSERT_TRUE(fd >= 0);
+        TEST_ASSERT_TRUE(posix_adapter_test::descriptorIsClosed(fd));
     }
 }
 
