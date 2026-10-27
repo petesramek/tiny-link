@@ -802,7 +802,7 @@ namespace {
         uint8_t ackPayload[tinylink::ACK_MESSAGE_WIRE_SIZE] = {};
         size_t payloadLength = 0;
         TEST_ASSERT_TRUE(tinylink_test::decodeWrittenFrame(
-            adapter, 1, type, sequence, ackPayload, sizeof(ackPayload), payloadLength));
+            adapter, 0, type, sequence, ackPayload, sizeof(ackPayload), payloadLength));
         TEST_ASSERT_EQUAL_UINT8(91, sequence);
     }
 
