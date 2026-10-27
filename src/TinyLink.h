@@ -309,6 +309,53 @@ private:
         }
     }
 
+    /** @brief Handle an application frame after reserved-type routing. */
+    void handle_application(uint8_t sequence,
+                            const uint8_t* payload,
+                            size_t payloadLength)
+    {
+        if (!is_connected(_connectionState)) {
+            ++_stats.unexpectedMessageTypes;
+            return;
+        }
+
+        if (payloadLength != sizeof(T)) {
+            ++_stats.payloadSizeMismatches;
+            return;
+        }
+
+        memcpy(&_mailbox, payload, sizeof(T));
+        _lastReceivedSequence = sequence;
+        _hasNew = true;
+        ++_stats.packetsReceived;
+
+        if (_onDataReceived) {
+            _onDataReceived(_mailbox);
+        }
+    }
+
+    /** @brief Decode and dispatch one accumulated COBS block. */
+    void finish_frame()
+    {
+        if (_encodedReceiveLength == 0) {
+            _receiveState = ReceiveState::WaitingForFrame;
+            return;
+        }
+
+        uint8_t plain[MAX_PLAIN_SIZE] = {};
+        const codec::CobsResult decoded = codec::cobs_decode(
+            _encodedReceive,
+            _encodedReceiveLength,
+            plain,
+            sizeof(plain));
+
+        _transmitState = TransmitState::Ready;
+
+        if (_onAckReceived) {
+            _onAckReceived(sequence, result);
+        }
+    }
+
     /** @brief Handle a log frame independently from callback registration. */
     void handle_log(const uint8_t* payload, size_t payloadLength)
     {
