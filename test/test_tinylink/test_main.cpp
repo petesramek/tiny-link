@@ -28,6 +28,7 @@ namespace {
     tinylink::HandshakeMessage lastHandshake;
     uint8_t lastAckSequence;
     tinylink::AckResult lastAckResult;
+    Link* ackOnCallbackLink;
 
     void onData(const Payload& payload)
     {
@@ -52,6 +53,11 @@ namespace {
         ++ackCallbackCount;
         lastAckSequence = sequence;
         lastAckResult = result;
+    }
+
+    void acknowledgeOnData(const Payload&)
+    {
+        ackOnCallbackLink->sendAck();
     }
 
     Payload payloadWith(uint8_t first)
@@ -84,6 +90,7 @@ namespace {
         TEST_ASSERT_FALSE(link.awaitingAck());
         TEST_ASSERT_FALSE(link.canSend());
         TEST_ASSERT_FALSE(link.available());
+        TEST_ASSERT_FALSE(link.sendAck());
 
         const tinylink::Stats stats = link.stats();
         TEST_ASSERT_EQUAL_UINT32(0, stats.packetsReceived);
@@ -744,6 +751,112 @@ namespace {
             static_cast<int>(ackPayload[0]));
     }
 
+    void testSendAckRequiresAndRetainsAcceptedApplicationSequence()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_FALSE(link.sendAck());
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+
+        const Payload received = payloadWith(0x61);
+        TEST_ASSERT_TRUE(tinylink_test::queueApplication(
+            adapter, 0x37, 73, received.bytes, sizeof(received.bytes)));
+        link.update();
+        TEST_ASSERT_TRUE(link.available());
+        const Payload readPayload = link.read();
+        TEST_ASSERT_EQUAL_UINT8_ARRAY(
+            received.bytes, readPayload.bytes, sizeof(received.bytes));
+        link.flush();
+
+        const Payload outgoing = payloadWith(0x71);
+        TEST_ASSERT_TRUE(link.sendData(0x38, outgoing));
+        adapter.clearOutput();
+        TEST_ASSERT_TRUE(link.sendAck());
+
+        uint8_t type = 0;
+        uint8_t sequence = 0;
+        uint8_t ackPayload[tinylink::ACK_MESSAGE_WIRE_SIZE] = {};
+        size_t payloadLength = 0;
+        TEST_ASSERT_TRUE(tinylink_test::decodeWrittenFrame(
+            adapter, 0, type, sequence, ackPayload, sizeof(ackPayload), payloadLength));
+        TEST_ASSERT_EQUAL_UINT8(
+            tinylink::message_type_to_wire(tinylink::MessageType::Ack), type);
+        TEST_ASSERT_EQUAL_UINT8(73, sequence);
+    }
+
+    void testSendAckSequenceSurvivesCallbackDelivery()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+        ackOnCallbackLink = &link;
+        link.onDataReceived(acknowledgeOnData);
+
+        const Payload received = payloadWith(0x41);
+        TEST_ASSERT_TRUE(tinylink_test::queueApplication(
+            adapter, 0x37, 91, received.bytes, sizeof(received.bytes)));
+        link.update();
+
+        uint8_t type = 0;
+        uint8_t sequence = 0;
+        uint8_t ackPayload[tinylink::ACK_MESSAGE_WIRE_SIZE] = {};
+        size_t payloadLength = 0;
+        TEST_ASSERT_TRUE(tinylink_test::decodeWrittenFrame(
+            adapter, 0, type, sequence, ackPayload, sizeof(ackPayload), payloadLength));
+        TEST_ASSERT_EQUAL_UINT8(91, sequence);
+    }
+
+    void testSendAckSequenceIsInvalidatedByBeginAndAcceptedHandshake()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+        const Payload received = payloadWith(0x51);
+
+        TEST_ASSERT_TRUE(tinylink_test::queueApplication(
+            adapter, 0x37, 92, received.bytes, sizeof(received.bytes)));
+        link.update();
+        TEST_ASSERT_TRUE(link.sendAck());
+        TEST_ASSERT_TRUE(link.begin());
+        TEST_ASSERT_FALSE(link.sendAck());
+
+        adapter.clearOutput();
+        TEST_ASSERT_TRUE(tinylink_test::queueHandshake(
+            adapter, tinylink::HandshakeKind::Response));
+        link.update();
+        TEST_ASSERT_TRUE(tinylink_test::queueApplication(
+            adapter, 0x37, 93, received.bytes, sizeof(received.bytes)));
+        link.update();
+        TEST_ASSERT_TRUE(link.sendAck());
+        adapter.clearOutput();
+        TEST_ASSERT_TRUE(tinylink_test::queueHandshake(
+            adapter, tinylink::HandshakeKind::Request));
+        link.update();
+        TEST_ASSERT_FALSE(link.sendAck());
+    }
+
+    void testEnginePacketTelemetrySaturates()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+
+        tinylink::Stats stats = link.stats();
+        stats.packetsReceived = UINT32_MAX - 1u;
+        tinylink::TinyLinkTestAccess::setStats(link, stats);
+
+        const Payload received = payloadWith(0x31);
+        TEST_ASSERT_TRUE(tinylink_test::queueApplication(
+            adapter, 0x37, 94, received.bytes, sizeof(received.bytes)));
+        link.update();
+        TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, link.stats().packetsReceived);
+
+        TEST_ASSERT_TRUE(tinylink_test::queueApplication(
+            adapter, 0x37, 95, received.bytes, sizeof(received.bytes)));
+        link.update();
+        TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, link.stats().packetsReceived);
+    }
+
     void testMalformedCobsAndEmptyDelimitersAreHandled()
     {
         FakeAdapter adapter;
@@ -1028,6 +1141,7 @@ namespace {
         TEST_ASSERT_FALSE(link.awaitingAck());
         TEST_ASSERT_FALSE(link.canSend());
         TEST_ASSERT_FALSE(link.available());
+        TEST_ASSERT_FALSE(link.sendAck());
         TEST_ASSERT_EQUAL(
             static_cast<int>(tinylink::ConnectionState::Inactive),
             static_cast<int>(link.connectionState()));
@@ -1157,6 +1271,10 @@ int main()
     RUN_TEST(testSendLogEncodesFieldsAndUsesTimeAndSequence);
     RUN_TEST(testSendLogTruncatesLongTextAndNullTextBecomesEmpty);
     RUN_TEST(testSendAckUsesLatestReceivedSequenceAndResult);
+    RUN_TEST(testSendAckRequiresAndRetainsAcceptedApplicationSequence);
+    RUN_TEST(testSendAckSequenceSurvivesCallbackDelivery);
+    RUN_TEST(testSendAckSequenceIsInvalidatedByBeginAndAcceptedHandshake);
+    RUN_TEST(testEnginePacketTelemetrySaturates);
     RUN_TEST(testMalformedCobsAndEmptyDelimitersAreHandled);
     RUN_TEST(testInvalidPacketChecksumIsCounted);
     RUN_TEST(testShortAndHeaderLengthMismatchPacketsAreCounted);
