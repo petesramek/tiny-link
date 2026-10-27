@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   restoration. `connected()` represents both transport availability and protocol readiness.
 
 ### Added
+- Native Unity tests are organized under `test/test_native/` by production responsibility,
+  with shared adapter stubs isolated under `support/stubs/`.
 - `TelemetryEvent` mapping for centralized TinyStats increments and regression tests for counter
   saturation and received-sequence ACK validity.
 - POSIX adapter tests for pseudo-terminal configuration and I/O, initialization failures,
@@ -65,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `CITATION.cff` for OSS best practices.
 - Unity-style unit tests: `test_stats`, `test_ackmessage`, `test_ackmessage_more`,
   `test_debugmessage`, `test_debugmessage_edgecases`, `test_message_type`, `test_status_strings`.
-  All registered in `test/test_runner.cpp`.
+  All registered in `test/test_native/test_runner.cpp`.
 
 ### Changed
 - Consumer-defined TinyLink payload types must be trivially copyable before their object

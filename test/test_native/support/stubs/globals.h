@@ -1,7 +1,7 @@
 #pragma once
 
 #include "TinyLink.h"
-#include "adapters/TinyTestAdapter.h"
+#include "TinyTestAdapter.h"
 
 /** @brief Sample payload to test struct alignment and float precision */
 struct TestPayload {

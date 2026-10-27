@@ -12,7 +12,7 @@
 #include <vector>
 #include <stdint.h>
 #include <stddef.h>
-#include "../../src/TinyWriteResult.h"
+#include "TinyWriteResult.h"
 
 namespace tinylink {
 

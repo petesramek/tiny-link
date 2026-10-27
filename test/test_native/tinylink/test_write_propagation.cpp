@@ -1,8 +1,8 @@
 #include <unity.h>
 #include <string.h>
 #include "TinyLink.h"
-#include "adapters/TinyTestAdapter.h"
-#include "globals.h"
+#include "support/stubs/TinyTestAdapter.h"
+#include "support/stubs/globals.h"
 
 using namespace tinylink;
 

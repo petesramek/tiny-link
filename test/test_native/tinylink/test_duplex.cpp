@@ -17,8 +17,8 @@
  */
 
 #include <unity.h>
-#include "globals.h"
-#include "adapters/TinyDuplexTestAdapter.h"
+#include "support/stubs/globals.h"
+#include "support/stubs/TinyDuplexTestAdapter.h"
 #include "internal/protocol/AckMessage.h"
 #include "internal/protocol/HandshakeMessage.h"
 #include "internal/protocol/LogMessage.h"

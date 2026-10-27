@@ -1,5 +1,5 @@
 /**
- * @file adapters/TinyDuplexTestAdapter.h
+ * @file TinyDuplexTestAdapter.h
  * @brief Cross-connected duplex adapter for two-instance protocol tests.
  *
  * Connects two TinyLink instances so that writes from one go directly into
@@ -17,7 +17,7 @@
 #ifndef TINY_DUPLEX_TEST_ADAPTER_H
 #define TINY_DUPLEX_TEST_ADAPTER_H
 
-#include "adapters/TinyTestAdapter.h"
+#include "TinyTestAdapter.h"
 
 namespace tinylink {
 

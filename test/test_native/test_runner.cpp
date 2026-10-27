@@ -1,5 +1,5 @@
 #include <unity.h>
-#include "globals.h"
+#include "support/stubs/globals.h"
 
 // Forward declarations of the registration functions implemented in each test file.
 void register_fletcher16_tests(void);

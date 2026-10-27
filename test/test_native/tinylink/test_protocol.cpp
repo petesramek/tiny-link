@@ -10,7 +10,7 @@
 #include <vector>
 #include <stdint.h>
 #include <cmath>
-#include "globals.h"
+#include "support/stubs/globals.h"
 
 /** 
  * @brief TEST: End-to-end success.

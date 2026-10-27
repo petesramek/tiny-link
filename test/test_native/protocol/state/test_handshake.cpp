@@ -6,8 +6,8 @@
 
 #include <unity.h>
 #include "TinyLink.h"
-#include "adapters/TinyDuplexTestAdapter.h"
-#include "globals.h"  // for TestPayload and the LoopbackAdapter typedef
+#include "support/stubs/TinyDuplexTestAdapter.h"
+#include "support/stubs/globals.h"  // for TestPayload and the LoopbackAdapter typedef
 
 using namespace tinylink;
 

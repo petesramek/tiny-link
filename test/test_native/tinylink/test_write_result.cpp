@@ -5,7 +5,7 @@
 
 #include <unity.h>
 #include "TinyWriteResult.h"
-#include "adapters/TinyTestAdapter.h"
+#include "support/stubs/TinyTestAdapter.h"
 
 using namespace tinylink;
 

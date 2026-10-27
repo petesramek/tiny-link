@@ -44,7 +44,7 @@ static ssize_t posix_test_write(int fd, const void* buffer, size_t length);
 #define cfsetospeed posix_test_cfsetospeed
 #define tcsetattr posix_test_tcsetattr
 #define write posix_test_write
-#include "../src/adapters/TinyPosixAdapter.h"
+#include "adapters/TinyPosixAdapter.h"
 #undef write
 #undef tcsetattr
 #undef cfsetospeed
