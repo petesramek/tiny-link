@@ -123,6 +123,13 @@ Run all native tests with:
 pio test -e native
 ```
 
+Run the same suite with AddressSanitizer and UndefinedBehaviorSanitizer on a
+supported GCC or Clang toolchain with:
+
+```bash
+pio test -e native_sanitized
+```
+
 All tests must pass before a PR will be merged. If you add new functionality, please include corresponding tests.
 
 ---
