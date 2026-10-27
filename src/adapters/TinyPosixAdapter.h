@@ -1,161 +1,238 @@
-﻿/**
- * @file TinyPosixAdapter.h
- * @brief POSIX-compliant (Linux/macOS) serial adapter for TinyLink.
+/**
+ * @file adapters/TinyPosixAdapter.h
+ * @brief Owning POSIX serial adapter for TinyLink.
  *
- * This adapter uses termios and standard POSIX APIs to provide a
- * TinyLink-compatible serial transport on Unix-like systems.
+ * The adapter opens, configures, owns, and closes one POSIX serial-device file
+ * descriptor. Construction leaves the adapter closed when any required setup
+ * step fails.
+ *
+ * Write methods return TinyWriteResult with the byte count reported by POSIX
+ * write().
  */
+#ifndef TINYLINK_ADAPTERS_TINYPOSIXADAPTER_H
+#define TINYLINK_ADAPTERS_TINYPOSIXADAPTER_H
 
-#ifndef TINY_POSIX_ADAPTER_H
-#define TINY_POSIX_ADAPTER_H
-
-#if !defined(_WIN32)
- // POSIX implementation
-#else
-#error "TinyPosixAdapter cannot be compiled on Windows."
+#if defined(_WIN32)
+#error "TinyPosixAdapter cannot be compiled on Windows"
 #endif
 
+#include <chrono>
+#include <stddef.h>
+#include <stdint.h>
+
+#include <errno.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
-#include <sys/ioctl.h>
-#include <chrono>
-#include <stdint.h>
-#include <stddef.h>
 #include "../TinyWriteResult.h"
 
 namespace tinylink {
 
+/**
+ * @brief Owning non-blocking serial adapter for POSIX platforms.
+ *
+ * The constructor opens and configures the device for raw 8N1 communication
+ * without hardware or software flow control. Destruction closes the descriptor.
+ */
+class TinyPosixAdapter {
+private:
+    int _fileDescriptor;
+
+    TinyPosixAdapter(const TinyPosixAdapter&) = delete;
+    TinyPosixAdapter& operator=(const TinyPosixAdapter&) = delete;
+
+    /** @brief Close and invalidate the owned file descriptor. */
+    inline void close_port()
+    {
+        if (_fileDescriptor >= 0) {
+            ::close(_fileDescriptor);
+            _fileDescriptor = -1;
+        }
+    }
+
+public:
     /**
-     * @class TinyPosixAdapter
-     * @brief Standard POSIX implementation for serial communication on Unix-like systems.
+     * @brief Open and configure a POSIX serial device.
      *
-     * Adapter contract (required by TinyLink):
-     *   - bool          isOpen();
-     *   - int           available();
-     *   - int           read();
-     *   - TinyWriteResult write(uint8_t);
-     *   - TinyWriteResult write(const uint8_t*, size_t);
-     *   - unsigned long millis();
+     * The adapter remains closed when @p port is null, open() fails, the device
+     * attributes cannot be read, the supplied speed cannot be applied, or the
+     * configured attributes cannot be committed.
+     *
+     * @param port Null-terminated device path such as "/dev/ttyUSB0".
+     * @param baud POSIX termios speed constant such as B9600 or B115200.
      */
-    class TinyPosixAdapter {
-    private:
-        int _fd; /**< File descriptor for the serial port (-1 if not open) */
-
-        void closePort() {
-            if (_fd != -1) {
-                const int fd = _fd;
-                _fd = -1;
-                ::close(fd);
-            }
+    explicit TinyPosixAdapter(
+        const char* port,
+        speed_t baud = B9600)
+        : _fileDescriptor(-1)
+    {
+        if (!port) {
+            return;
         }
 
-    public:
-        /**
-         * @brief Construct a new TinyPosixAdapter.
-         * @param port Path to the serial device (e.g., "/dev/ttyUSB0").
-         * @param baud Baud rate constant (e.g., B9600, B115200).
-         */
-        explicit TinyPosixAdapter(const char* port, speed_t baud = B9600)
-            : _fd(-1) {
-            if (!port) return;
+        const int descriptor = ::open(
+            port,
+            O_RDWR | O_NOCTTY | O_NONBLOCK);
 
-            _fd = ::open(port, O_RDWR | O_NOCTTY | O_NONBLOCK);
-            if (_fd == -1) return;
+        if (descriptor < 0) {
+            return;
+        }
 
-            struct termios opt;
-            if (tcgetattr(_fd, &opt) != 0 ||
-                    cfsetispeed(&opt, baud) != 0 ||
-                    cfsetospeed(&opt, baud) != 0) {
-                closePort();
-                return;
-            }
+        _fileDescriptor = descriptor;
 
-            opt.c_cflag &= ~(CSIZE | PARENB | CSTOPB);
+        struct termios options;
+        if (tcgetattr(_fileDescriptor, &options) != 0) {
+            close_port();
+            return;
+        }
+
+        cfmakeraw(&options);
+        options.c_cflag &= ~CSIZE;
+        options.c_cflag |= CS8 | CLOCAL | CREAD;
+        options.c_cflag &= ~(PARENB | PARODD | CSTOPB);
 #ifdef CRTSCTS
-            opt.c_cflag &= ~CRTSCTS;
+        options.c_cflag &= ~CRTSCTS;
 #endif
-            opt.c_cflag |= (CLOCAL | CREAD | CS8);
-            opt.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP |
-                INLCR | IGNCR | ICRNL | IXON | IXOFF | IXANY);
-            opt.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
-            opt.c_oflag &= ~OPOST;
-            opt.c_cc[VMIN] = 0;
-            opt.c_cc[VTIME] = 0;
+        options.c_iflag &= ~(IXON | IXOFF | IXANY);
+        options.c_cc[VMIN] = 0;
+        options.c_cc[VTIME] = 0;
 
-            if (tcsetattr(_fd, TCSANOW, &opt) != 0) {
-                closePort();
-            }
+        if (cfsetispeed(&options, baud) != 0 ||
+            cfsetospeed(&options, baud) != 0 ||
+            tcsetattr(_fileDescriptor, TCSANOW, &options) != 0) {
+            close_port();
+        }
+    }
+
+    /** @brief Close the owned serial-device file descriptor. */
+    ~TinyPosixAdapter()
+    {
+        close_port();
+    }
+
+    /** @brief Determine whether construction completed successfully. */
+    inline bool isOpen() const
+    {
+        return _fileDescriptor >= 0;
+    }
+
+    /**
+     * @brief Return the number of bytes currently queued for reading.
+     *
+     * @return Nonnegative queued-byte count, or zero when closed or on error.
+     */
+    inline int available() const
+    {
+        if (!isOpen()) {
+            return 0;
         }
 
-        TinyPosixAdapter(const TinyPosixAdapter&) = delete;
-        TinyPosixAdapter& operator=(const TinyPosixAdapter&) = delete;
-
-        /**
-         * @brief Closes the file descriptor upon destruction.
-         */
-        ~TinyPosixAdapter() {
-            closePort();
+        int count = 0;
+        if (ioctl(_fileDescriptor, FIONREAD, &count) != 0 || count < 0) {
+            return 0;
         }
 
-        /**
-         * @brief Returns true if the port was successfully opened.
-         */
-        inline bool isOpen() {
-            return _fd != -1;
+        return count;
+    }
+
+    /**
+     * @brief Read one byte without blocking.
+     *
+     * End-of-file, EAGAIN, EWOULDBLOCK, and other read errors are represented
+     * as -1 by the current TinyLink adapter contract.
+     *
+     * @return Byte in the range 0 through 255, or -1 when no byte was read.
+     */
+    inline int read()
+    {
+        if (!isOpen()) {
+            return -1;
         }
 
-        /**
-         * @brief Returns number of bytes available in the OS RX queue.
-         */
-        inline int available() {
-            if (_fd == -1) return 0;
-            int b = 0;
-            return (ioctl(_fd, FIONREAD, &b) < 0) ? 0 : b;
+        uint8_t value = 0;
+        const ssize_t bytesRead = ::read(
+            _fileDescriptor,
+            &value,
+            1);
+
+        return bytesRead == 1
+            ? static_cast<int>(value)
+            : -1;
+    }
+
+    /**
+     * @brief Write one byte to the serial device.
+     *
+     * The accepted byte count from POSIX write() is returned.
+     *
+     * @param value Byte to write.
+     */
+    inline TinyWriteResult write(uint8_t value)
+    {
+        if (!isOpen()) {
+            return tiny_write_result(1, 0, false);
         }
 
-        /**
-         * @brief Reads a single byte. Non-blocking.
-         * @return Byte in range [0,255], or -1 if no data is available or on error.
-         */
-        inline int read() {
-            if (_fd == -1) return -1;
-            uint8_t b = 0;
-            return (::read(_fd, &b, 1) > 0) ? static_cast<int>(b) : -1;
+        const ssize_t written = ::write(
+            _fileDescriptor,
+            &value,
+            1);
+        const bool succeeded = written >= 0;
+        return tiny_write_result(
+            1, succeeded ? static_cast<size_t>(written) : 0, succeeded);
+    }
+
+    /**
+     * @brief Write a byte sequence to the serial device.
+     *
+     * Because the descriptor is non-blocking, a partial result is possible.
+     * A zero-length request does not call POSIX write(). A null pointer is
+     * valid only when @p length is zero.
+     *
+     * @param data Bytes to write, or nullptr when @p length is zero.
+     * @param length Number of bytes to write.
+     */
+    inline TinyWriteResult write(
+        const uint8_t* data,
+        size_t length)
+    {
+        if (length == 0) {
+            return tiny_write_result(0, 0, true);
         }
 
-        /**
-         * @brief Writes a single byte to the serial port.
-         */
-        inline TinyWriteResult write(uint8_t c) {
-            return write(&c, 1);
+        if (!isOpen() || !data) {
+            return tiny_write_result(length, 0, false);
         }
 
-        /**
-         * @brief Writes a buffer of bytes to the serial port.
-         */
-        inline TinyWriteResult write(const uint8_t* b, size_t l) {
-            if (l == 0) return tiny_write_result(0, 0, true);
-            if (_fd == -1 || !b) return tiny_write_result(l, 0, false);
-            const ssize_t written = ::write(_fd, b, l);
-            const bool succeeded = written >= 0;
-            return tiny_write_result(
-                l, succeeded ? static_cast<size_t>(written) : 0, succeeded);
-        }
+        const ssize_t written = ::write(
+            _fileDescriptor,
+            data,
+            length);
+        const bool succeeded = written >= 0;
+        return tiny_write_result(
+            length, succeeded ? static_cast<size_t>(written) : 0, succeeded);
+    }
 
-        /**
-         * @brief Returns system uptime in milliseconds using steady_clock.
-         */
-        inline unsigned long millis() {
-            return static_cast<unsigned long>(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now().time_since_epoch()
-                ).count()
-                );
-        }
-    };
+    /**
+     * @brief Return monotonic process-independent time in milliseconds.
+     *
+     * The value may wrap when unsigned long is 32 bits. TinyLink uses unsigned
+     * elapsed-time subtraction, which supports this conventional rollover.
+     *
+     * @return steady_clock duration since its unspecified epoch in milliseconds.
+     */
+    inline unsigned long millis() const
+    {
+        const std::chrono::steady_clock::duration elapsed =
+            std::chrono::steady_clock::now().time_since_epoch();
+
+        return static_cast<unsigned long>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                elapsed).count());
+    }
+};
 
 } // namespace tinylink
 
-#endif // _WIN32
-#endif // TINY_POSIX_ADAPTER_H
+#endif // TINYLINK_ADAPTERS_TINYPOSIXADAPTER_H
