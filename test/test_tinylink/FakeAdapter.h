@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "../../src/TinyWriteResult.h"
+
 namespace tinylink_test {
 
     class FakeAdapter {
@@ -36,23 +38,25 @@ namespace tinylink_test {
             return _input[_inputPosition++];
         }
 
-        void write(uint8_t value)
+        tinylink::TinyWriteResult write(uint8_t value)
         {
-            if (_open && _outputLength < BUFFER_CAPACITY) {
-                _output[_outputLength++] = value;
-            }
+            return write(&value, 1);
         }
 
-        void write(const uint8_t* data, size_t length)
+        tinylink::TinyWriteResult write(const uint8_t* data, size_t length)
         {
+            if (length == 0) {
+                return tinylink::tiny_write_result(0, 0, true);
+            }
             if (!_open || !data ||
                 length > BUFFER_CAPACITY - _outputLength) {
-                return;
+                return tinylink::tiny_write_result(length, 0, false);
             }
 
             for (size_t i = 0; i < length; ++i) {
                 _output[_outputLength++] = data[i];
             }
+            return tinylink::tiny_write_result(length, length, true);
         }
 
         unsigned long millis() const { return _now; }
