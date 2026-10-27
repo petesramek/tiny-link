@@ -18,6 +18,7 @@
 #include "internal/protocol/LogMessage.h"
 #include "internal/protocol/HandshakeMessage.h"
 #include "protocol/LogLevel.h"
+#include "TinyWriteResult.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -140,7 +141,7 @@ namespace tinylink {
             const size_t MAX_PLAIN = 3 + 64 + 2;
             const size_t MAX_ENC   = MAX_PLAIN + 4;
             uint8_t pBuf[MAX_PLAIN];
-            uint8_t rawBuf[MAX_ENC];
+            uint8_t rawBuf[MAX_ENC + 2];
 
             size_t plainLen = tinylink::packet::pack(wireType, seq, payload, len,
                                                      pBuf, MAX_PLAIN);
@@ -149,11 +150,20 @@ namespace tinylink {
                 return false;
             }
             size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen,
-                                                       rawBuf, MAX_ENC);
-            _hw->write(0x00);
-            _hw->write(rawBuf, eLen);
-            _hw->write(0x00);
-            return true;
+                                                       rawBuf + 1, MAX_ENC);
+            return writeEncodedFrame(rawBuf, eLen);
+        }
+
+        // A frame is submitted as one adapter write so a partial result is
+        // unambiguously incomplete: the final delimiter is the last byte.
+        bool writeEncodedFrame(uint8_t* frame, size_t encodedLen) {
+            if (encodedLen > MAX_FRAME_ENC) return false;
+            frame[0] = 0x00;
+            frame[encodedLen + 1] = 0x00;
+            const size_t frameLen = encodedLen + 2;
+            TinyWriteResult result = _hw->write(frame, frameLen);
+            return result.status == TinyWriteStatus::Complete &&
+                   result.bytesWritten == frameLen;
         }
 
         // ---- State utility --------------------------------------------------
@@ -192,9 +202,9 @@ namespace tinylink {
         // handleHandshakeMessage receives priorState (the state before we
         // entered FRAME_COMPLETE) so it can make correct transitions
         // regardless of the fact that _state is FRAME_COMPLETE at call time.
-        void handleHandshakeMessage(const uint8_t* payload, size_t len,
+        bool handleHandshakeMessage(const uint8_t* payload, size_t len,
                                     TinyState fromState) {
-            if (len < sizeof(HandshakeMessage)) return;
+            if (len < sizeof(HandshakeMessage)) return false;
 
             HandshakeMessage m;
             memcpy(&m, payload, sizeof(m));
@@ -203,9 +213,12 @@ namespace tinylink {
             if (m.version == 0) {
                 HandshakeMessage reply;
                 reply.version = 1;
-                send_internal(message_type_to_wire(MessageType::Handshake), 0,
-                              reinterpret_cast<const uint8_t*>(&reply),
-                              sizeof(reply), /*isInternal=*/true);
+                if (!send_internal(message_type_to_wire(MessageType::Handshake), 0,
+                                   reinterpret_cast<const uint8_t*>(&reply),
+                                   sizeof(reply), /*isInternal=*/true)) {
+                    _state = restoreState(fromState);
+                    return false;
+                }
             }
 
             // For both HS(v=0) and HS(v=1): we are now connected.
@@ -214,6 +227,7 @@ namespace tinylink {
             _state = (fromState == TinyState::AWAITING_ACK)
                      ? TinyState::AWAITING_ACK
                      : TinyState::WAIT_FOR_SYNC;
+            return true;
         }
 
         // Private raw-level sendLog (delegates to the typed overload).
@@ -327,8 +341,11 @@ namespace tinylink {
          * @brief Initiate the link and start the handshake exchange.
          *
          * Sends an initial Handshake frame (version=0) and transitions to
-         * CONNECTING.  While CONNECTING the engine periodically re-sends the
+         * CONNECTING. While CONNECTING the engine periodically re-sends the
          * Handshake (every HANDSHAKE_RETRY_MS = 1 s) until the peer replies.
+         *
+         * @return true if the complete request frame was accepted by the
+         *         adapter; false if the port is closed or output was incomplete.
          *
          * Handshake exchange (two frames, no intermediate state):
          *   1. begin()  →  sends HS(v=0)   →  state = CONNECTING
@@ -342,16 +359,16 @@ namespace tinylink {
          * Data frames (sendData) are blocked until connected() returns true.
          * Calling begin() again re-initiates the handshake from CONNECTING.
          */
-        void begin() {
-            if (!_hw->isOpen()) return;
+        bool begin() {
+            if (!_hw->isOpen()) return false;
             _handshakeEnabled = true;
             _state            = TinyState::CONNECTING;
             _lastHandshakeSent = _hw->millis();
             HandshakeMessage m;
             m.version = 0;
-            send_internal(message_type_to_wire(MessageType::Handshake), 0,
-                          reinterpret_cast<const uint8_t*>(&m), sizeof(m),
-                          /*isInternal=*/true);
+            return send_internal(message_type_to_wire(MessageType::Handshake), 0,
+                                 reinterpret_cast<const uint8_t*>(&m), sizeof(m),
+                                 /*isInternal=*/true);
         }
 
         /**
@@ -474,7 +491,7 @@ namespace tinylink {
             size_t hsLen = tinylink::packet::unpack(
                 _pBuf, dLen, &rtype, &rseq, hsBuf, sizeof(hsBuf));
             if (hsLen == sizeof(HandshakeMessage)) {
-                handleHandshakeMessage(hsBuf, hsLen, priorState);
+                (void)handleHandshakeMessage(hsBuf, hsLen, priorState);
                 if (_onHandshakeReceived) {
                     HandshakeMessage hm;
                     memcpy(&hm, hsBuf, sizeof(hm));
@@ -634,34 +651,44 @@ namespace tinylink {
         // ---- sendData() — Encode and transmit a user data frame -------------
         //
         // Uses local stack buffers — never aliases the RX accumulation buffers.
-        // In handshake mode the call is dropped silently until connected().
-        // After a successful send, transitions to AWAITING_ACK (handshake mode).
+        // In handshake mode the call is rejected until connected().
+        // Returns false if output is incomplete; only a complete frame consumes
+        // a sequence number or transitions to AWAITING_ACK.
         //
-        void sendData(uint8_t type, const T& payload) {
-            if (!_hw->isOpen()) return;
-            if (_handshakeEnabled && !connected()) return;
+        // @return true if the complete frame was accepted; false if the port
+        //         is closed, the link is not connected, or output was incomplete.
+        bool sendData(uint8_t type, const T& payload) {
+            if (!_hw->isOpen()) return false;
+            if (_handshakeEnabled && !connected()) return false;
 
             const size_t TX_PLAIN = 3 + sizeof(T) + 2;
             const size_t TX_ENC   = TX_PLAIN + 4;
             uint8_t pBuf[TX_PLAIN];
-            uint8_t rawBuf[TX_ENC];
+            uint8_t rawBuf[TX_ENC + 2];
 
-            _currSeq = _nextSeq++;
+            const uint8_t seq = _nextSeq;
             size_t plainLen = tinylink::packet::pack(
-                type, _currSeq,
+                type, seq,
                 reinterpret_cast<const uint8_t*>(&payload), sizeof(T),
                 pBuf, TX_PLAIN);
-            if (plainLen == 0) { _stats.increment(TinyStatus::ERR_CRC); return; }
+            if (plainLen == 0) {
+                _stats.increment(TinyStatus::ERR_CRC);
+                return false;
+            }
             size_t eLen = tinylink::codec::cobs_encode(pBuf, plainLen,
-                                                       rawBuf, TX_ENC);
-            _hw->write(0x00);
-            _hw->write(rawBuf, eLen);
-            _hw->write(0x00);
+                                                       rawBuf + 1, TX_ENC);
+            if (!writeEncodedFrame(rawBuf, eLen)) {
+                _state = restoreState(_state);
+                return false;
+            }
 
+            _currSeq = seq;
+            _nextSeq = static_cast<uint8_t>(seq + 1);
             if (_handshakeEnabled) {
                 _state    = TinyState::AWAITING_ACK;
                 _lastSent = _hw->millis();
             }
+            return true;
         }
 
         // ---- sendAck() — Send an ACK for the last received user data frame --
@@ -681,7 +708,8 @@ namespace tinylink {
         // AWAITING_ACK, so this call has no observable effect.
         //
         // @param result  Status code to include in the ACK (default STATUS_OK).
-        // @return true on success; false if the port is closed.
+        // @return true if the complete ACK frame was accepted; false if the
+        //         port is closed or output was incomplete.
         //
         bool sendAck(TinyStatus result = TinyStatus::STATUS_OK) {
             TinyAck ack;
@@ -698,6 +726,9 @@ namespace tinylink {
         //
         // Wire format: LogMessage [ts:4][level:1][code:2][text:25] = 32 B.
         // The receiver can cast the raw payload directly to LogMessage.
+        // A failed write does not consume a transmit sequence number.
+        // @return true if the complete frame was accepted; false if the port
+        //         is closed or output was incomplete.
         //
         bool sendLog(LogLevel level, uint16_t code, const char* text) {
             if (!_hw->isOpen()) return false;
@@ -708,11 +739,17 @@ namespace tinylink {
             msg.code  = code;
             logmessage_set_text(msg, text);
 
-            _currSeq = _nextSeq++;
-            return send_internal(
-                message_type_to_wire(MessageType::Log), _currSeq,
-                reinterpret_cast<const uint8_t*>(&msg), sizeof(msg),
-                /*isInternal=*/false);
+            const uint8_t seq = _nextSeq;
+            if (!send_internal(
+                    message_type_to_wire(MessageType::Log), seq,
+                    reinterpret_cast<const uint8_t*>(&msg), sizeof(msg),
+                    /*isInternal=*/false)) {
+                return false;
+            }
+
+            _currSeq = seq;
+            _nextSeq = static_cast<uint8_t>(seq + 1);
+            return true;
         }
     };
 

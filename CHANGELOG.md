@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- TinyLink now checks complete adapter writes for data, ACK, log, and handshake frames.
+  `sendData()` and `begin()` report write failure; incomplete data output does not consume
+  a transmit sequence or enter `AWAITING_ACK`, and a failed handshake response does not
+  complete the connection transition.
+
 ### Added
 - `src/TinyWriteResult.h`: allocation-free adapter write outcome model, including complete,
   partial, failed, and zero-length results; all built-in transports now report platform writes.
