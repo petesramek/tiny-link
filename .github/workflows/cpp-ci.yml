@@ -22,6 +22,9 @@ jobs:
       - name: Run Native Unit Tests
         run: pio test -e native
 
+      - name: Run Native Unit Tests with Address and Undefined Behavior Sanitizers
+        run: pio test -e native_sanitized
+
       - name: Check Payload Compile Contracts
         run: python scripts/check_payload_compile_contract.py
 

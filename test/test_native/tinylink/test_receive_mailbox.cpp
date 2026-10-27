@@ -57,7 +57,7 @@ void test_async_callback(void) {
 void test_callback_burst(void) {
     static int triggerCount;
     triggerCount = 0;
-    link.onDataReceived([](const TestPayload& d) { triggerCount++; });
+    link.onDataReceived([](const TestPayload&) { triggerCount++; });
 
     TestPayload p = { 1, 1.1f };
     link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p);
@@ -286,7 +286,7 @@ void test_checksum_independence(void) {
 
     link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p1);
     while(adapter.available() > 0) link.update();
-    uint16_t crc1 = link.getStats().packets; // Check if p1 passed
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().packets);
     link.flush();
 
     link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), p2);
