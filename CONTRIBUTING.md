@@ -77,12 +77,12 @@ Use the [Feature Request](.github/ISSUE_TEMPLATE/feature_request.md) issue templ
 
 ## Development Setup
 
-TinyLink can be built and tested natively (no microcontroller required) via **PlatformIO**.
+TinyLink can be built and tested natively (no microcontroller required) via **PlatformIO** and Unity.
 
 ### Prerequisites
 
 - [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/index.html) (CLI or IDE)
-- A C++17-capable compiler (GCC ≥ 7, Clang ≥ 5, or MSVC 2017+)
+- A C++11-capable compiler (GCC ≥ 7, Clang ≥ 5, or MSVC 2017+)
 
 ### Build
 
@@ -94,30 +94,17 @@ pio run -e native
 ### Project Layout
 
 ```
-src/                         Core protocol (TinyLink.h, TinyProtocol.h, version.h)
-src/adapters/                Platform adapters (Arduino, POSIX, Windows, ESP-IDF, STM32 HAL)
-test/test_native/            PlatformIO-discovered native Unity suite
-test/test_native/adapters/   Adapter-specific tests (for example, posix/)
-test/test_native/internal/   Codec and internal protocol tests
-test/test_native/protocol/   Public protocol state, stats, and type tests
-test/test_native/tinylink/   Engine and end-to-end behavior tests
-test/test_native/support/    Native-only shared stubs and fixtures
-test/compile_contract/       Payload compile probes used by the CI helper
-examples/                    Ready-to-run demo sketches
+src/              Core protocol (TinyLink.h, TinyProtocol.h, version.h)
+src/adapters/     Platform adapters (Arduino, POSIX, Windows, ESP-IDF, STM32 HAL)
+examples/         Ready-to-run demo sketches
+test/             Native C++ unit tests
 ```
 
 ---
 
 ## Running Tests
 
-Native tests live in the PlatformIO-discovered `test/test_native/` Unity suite and use one
-shared runner. Subdirectories group test sources by production responsibility; they do not
-create separate runners. Shared native fixtures (`globals.h`, `TinyTestAdapter`, and
-`TinyDuplexTestAdapter`) are kept under `test/test_native/support/stubs/` so unrelated suites
-do not inherit their headers or include paths. The compile-contract probes are separate from
-the Unity suite and are run by `scripts/check_payload_compile_contract.py`.
-
-Run all native tests with:
+Tests live in the `test/` directory and use Unity. Run all native tests with:
 
 ```bash
 pio test -e native

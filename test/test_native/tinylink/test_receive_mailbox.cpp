@@ -1,8 +1,3 @@
-/**
- * @file test_receive_mailbox.cpp
- * @brief Receive mailbox, callback, checksum, and malformed-frame behavior.
- */
-
 #include <unity.h>
 #include <vector>
 #include <stdint.h>
@@ -11,10 +6,8 @@
 #include <algorithm>
 #include "support/stubs/globals.h"
 
-/** One-byte payload used as the lower side of a frame-size mismatch. */
 struct Small { uint8_t a; } __attribute__((packed));
 
-/** Eight-byte payload used as the upper side of a frame-size mismatch. */
 struct Large { uint32_t a; uint32_t b; } __attribute__((packed));
 
 /**
@@ -75,8 +68,7 @@ void test_callback_burst(void) {
         if(link.available()) link.flush();
     }
 
-    TEST_ASSERT_EQUAL_INT_MESSAGE(2, triggerCount,
-        "Expected callbacks for both uptime=1, value=1.1 frames in the burst");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(2, triggerCount, "Callback should have fired exactly twice");
 }
 
 /**
@@ -186,7 +178,6 @@ void test_ghost_zero_detection(void) {
 /** @test Verifies that valid COBS frames with incorrect payload sizes are rejected */
 
 void test_structural_size_mismatch(void) {
-    // Deliberately differs from TestPayload by four bytes to exercise strict size rejection.
     struct NewData { uint32_t a; uint32_t b; uint32_t c; } __attribute__((packed));
     tinylink::TinyLink<NewData, LoopbackAdapter> espLink(adapter);
 

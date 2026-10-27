@@ -1,8 +1,3 @@
-/**
- * @file test_logging.cpp
- * @brief Log-frame callback dispatch and separation from data callbacks.
- */
-
 #include <unity.h>
 #include "support/stubs/globals.h"
 #include "internal/protocol/LogMessage.h"

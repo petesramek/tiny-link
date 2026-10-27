@@ -1,8 +1,3 @@
-/**
- * @file test_application.cpp
- * @brief End-to-end payload, COBS transparency, and checksum boundary tests.
- */
-
 #include <unity.h>
 #include <vector>
 #include <stdint.h>
@@ -11,7 +6,6 @@
 #include <algorithm>
 #include "support/stubs/globals.h"
 
-/** Packed 64-bit payload used to prove message type is independent of payload type. */
 struct OtherStruct { uint64_t raw; } __attribute__((packed));
 
 /**
@@ -136,7 +130,6 @@ void test_leading_zero_payload(void) {
 /** @test Verifies that a zero at the final byte of the struct is preserved */
 
 void test_trailing_zero_payload(void) {
-    // The final payload byte is deliberately zero, exercising COBS at the tail.
     struct TailZero { uint16_t val; uint8_t zero; } __attribute__((packed));
     tinylink::TinyLink<TailZero, LoopbackAdapter> tailLink(adapter);
 
@@ -163,8 +156,7 @@ void test_minimal_interframe_spacing(void) {
             link.flush();
         }
     }
-    TEST_ASSERT_EQUAL_INT_MESSAGE(2, count,
-        "Expected two back-to-back frames with payload uptime=1 and no extra gap");
+    TEST_ASSERT_EQUAL_INT(2, count);
 }
 
 /** @test Verifies that the PLAIN_SIZE remains within the safe uint8_t bounds (255) */
@@ -190,8 +182,7 @@ void test_zero_gap_stress(void) {
             link.flush();
         }
     }
-    TEST_ASSERT_EQUAL_INT_MESSAGE(2, count,
-        "Expected both zero-gap frames with payload uptime=10");
+    TEST_ASSERT_EQUAL_INT(2, count);
 }
 
 /** @test Verifies that a 0x00 byte inside the payload is correctly handled by COBS */
@@ -222,7 +213,6 @@ void test_split_integer_alignment(void) {
 /** @test Verifies Fletcher-16 accuracy on a high-contrast (min/max) bit pattern */
 
 void test_fletcher_contrast_integrity(void) {
-    // Opposite bit patterns make checksum/data corruption easy to expose.
     struct Contrast { uint8_t a; uint8_t b; } __attribute__((packed));
     tinylink::TinyLink<Contrast, LoopbackAdapter> cLink(adapter);
     Contrast c = { 0x00, 0xFF };
@@ -246,7 +236,6 @@ void test_signed_boundary_integrity(void) {
 /** @test Verifies that Fletcher-16 handles payloads that result in a zero-sum correctly */
 
 void test_zero_sum_integrity(void) {
-    // The all-zero payload probes checksum handling at the zero-valued input boundary.
     struct AllOnes { uint32_t a; uint32_t b; } __attribute__((packed));
     tinylink::TinyLink<AllOnes, LoopbackAdapter> aLink(adapter);
     AllOnes data = { 0x00, 0x00 }; // Often results in specific sum patterns
@@ -259,7 +248,6 @@ void test_zero_sum_integrity(void) {
 /** @test Verifies Fletcher-16 mathematical correctness at the 255 modulo boundary */
 
 void test_fletcher_modulo_boundary(void) {
-    // Both bytes equal the Fletcher modulus boundary (255).
     struct ModData { uint8_t a; uint8_t b; } __attribute__((packed));
     tinylink::TinyLink<ModData, LoopbackAdapter> mLink(adapter);
 
@@ -286,8 +274,7 @@ void test_tight_frame_overlap(void) {
         link.update();
         if(link.available()) { count++; link.flush(); }
     }
-    TEST_ASSERT_EQUAL_INT_MESSAGE(2, count,
-        "Expected two uptime=1 frames despite an extra delimiter between them");
+    TEST_ASSERT_EQUAL_INT(2, count);
 }
 
 /** @test Verifies that the struct has no "hidden" padding bytes by checking total size */

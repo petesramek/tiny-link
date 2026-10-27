@@ -32,25 +32,10 @@ return type.
 
 TinyLink send methods report whether the complete delimited frame was accepted. Incomplete writes
 are not resumed: `sendData()` returns false without consuming its sequence or entering
-`AWAITING_ACK`, and `begin()` returns false while remaining in `CONNECTING` so the handshake can
-retry. Because bytes from a partial frame may already be on the wire, do not retry on that stream
-until it is synchronized again: recover/reopen and flush the transport endpoints, or let the
+the awaiting-ACK state, and `begin()` returns false while remaining in `Connecting` so the
+handshake can retry. Because bytes from a partial frame may already be on the wire, do not retry
+on that stream until it is synchronized again: recover/reopen and flush the transport endpoints, or let the
 receiver's inter-byte timeout discard the incomplete frame before sending another one.
-
-## Connection and transport lifecycle
-
-`connected()` represents both current adapter availability (`isOpen()`) and protocol readiness.
-In basic mode (before `begin()`), an available adapter is connected; in handshake mode, the
-connection is ready only after the handshake completes. Call `update()` regularly so the engine
-can observe adapter closure: it transitions to `TinyState::FAILED`, clears any partial receive
-frame, and drops a pending ACK expectation. A fully sent data frame is not retransmitted after
-transport loss; its sequence remains consumed, and the application decides whether to send it
-again.
-
-When `update()` observes the adapter available again, basic mode returns to `WAIT_FOR_SYNC`.
-Handshake mode automatically sends a new handshake and remains disconnected in `CONNECTING` until
-the peer replies. `FAILED` means only that the adapter was observed unavailable; it is recoverable,
-not a terminal protocol error. Already-delivered polling data remains available until `flush()`.
 
 ---
 
@@ -282,7 +267,7 @@ void onReceive(const SensorMessage& data) {
 
 `sendAck()` returns `false` until a valid application data frame has been
 accepted. Its received sequence remains available after callback delivery and
-after polling code reads `peek()` and calls `flush()`. Calling `begin()`,
+after polling code calls `read()` or `flush()`. Calling `begin()`,
 `reset()`, or accepting a new handshake invalidates that sequence.
 
 ### Three Update Modes, Side by Side
@@ -302,15 +287,15 @@ after polling code reads `peek()` and calls `flush()`. Calling `begin()`,
 Monitor link health in real-time to diagnose wiring issues:
 
 ```cpp
-const TinyStats& stats = link.getStats();
-Serial.print("Packets: "); Serial.println(stats.packets);
-Serial.print("CRC Errors: "); Serial.println(stats.crc);
-Serial.print("Timeouts: "); Serial.println(stats.timeout);
+const Stats stats = link.stats();
+Serial.print("Packets: "); Serial.println(stats.packetsReceived);
+Serial.print("Checksum Errors: "); Serial.println(stats.checksumMismatches);
+Serial.print("ACK Timeouts: "); Serial.println(stats.ackTimeouts);
 ```
 
-TinyStats counters are updated through `increment(TelemetryEvent)` and saturate
-at `UINT32_MAX` rather than wrapping. `merge()` uses the same saturating
-behavior.
+The engine records telemetry through `Stats::increment(TelemetryEvent)`.
+Counters saturate at `UINT32_MAX` rather than wrapping, and `Stats::merge()`
+uses the same saturating behavior.
 
 ## 📂 Project Structure
 
@@ -322,7 +307,7 @@ behavior.
 
 `examples/`: Ready-to-run duplex, callback, and health-monitoring demos.
 
-`test/`: Native C++ unit tests using `TinyTestAdapter`.
+`test/`: Native C++ unit tests using Unity.
 
 ## 🔄 Migration Guide
 

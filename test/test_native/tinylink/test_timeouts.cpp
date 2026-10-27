@@ -1,10 +1,4 @@
-/**
- * @file test_timeouts.cpp
- * @brief Inter-byte timeout boundaries, clock wrap, and fragmented arrivals.
- */
-
 #include <unity.h>
-#include <stdio.h>
 #include <vector>
 #include <stdint.h>
 #include <cmath>
@@ -60,11 +54,7 @@ void test_timeout_boundary(void) {
     adapter.inject(raw.data() + (raw.size() / 2), raw.size() - (raw.size() / 2));
     while(adapter.available() > 0) link.update();
 
-    char diagnostic[120];
-    snprintf(diagnostic, sizeof(diagnostic),
-        "valid frame (input length %u) was rejected after a 240ms split",
-        static_cast<unsigned>(raw.size()));
-    TEST_ASSERT_TRUE_MESSAGE(link.available(), diagnostic);
+    TEST_ASSERT_TRUE_MESSAGE(link.available(), "Timeout triggered too early on boundary");
 }
 
 /** @test Verifies the precise boundary of the inter-byte timeout logic */
@@ -77,14 +67,12 @@ void test_timeout_precision(void) {
     // Wait exactly at the edge (249ms)
     adapter.advanceMillis(249);
     link.update();
-    TEST_ASSERT_TRUE_MESSAGE(link.getStats().timeout == 0,
-        "partial byte 0xFF must not time out at 249ms (threshold is 250ms)");
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().timeout);
 
     // Cross the edge (2ms later)
     adapter.advanceMillis(2);
     link.update();
-    TEST_ASSERT_TRUE_MESSAGE(link.getStats().timeout == 1,
-        "partial byte 0xFF must time out at 251ms (threshold is 250ms)");
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().timeout);
 
     link.reset();
     adapter.setMillis(~0UL - 100UL);
@@ -94,13 +82,11 @@ void test_timeout_precision(void) {
     // Elapsed-time checks remain correct when millis() wraps around.
     adapter.advanceMillis(200);
     link.update();
-    TEST_ASSERT_TRUE_MESSAGE(link.getStats().timeout == 0,
-        "clock wrap: 200ms elapsed must remain below the 250ms timeout");
+    TEST_ASSERT_EQUAL_UINT32(0, link.getStats().timeout);
 
     adapter.advanceMillis(51);
     link.update();
-    TEST_ASSERT_TRUE_MESSAGE(link.getStats().timeout == 1,
-        "clock wrap: 251ms elapsed must cross the 250ms timeout");
+    TEST_ASSERT_EQUAL_UINT32(1, link.getStats().timeout);
 }
 
 /** @test Verifies that the state machine persists across fragmented single-byte arrivals */
@@ -116,11 +102,7 @@ void test_fragmented_arrival_persistence(void) {
         adapter.advanceMillis(50); // Significant delay, but < 250ms
         link.update();
     }
-    char diagnostic[128];
-    snprintf(diagnostic, sizeof(diagnostic),
-        "fragmented payload uptime=5 (%u bytes, 50ms/byte) was not delivered",
-        static_cast<unsigned>(raw.size()));
-    TEST_ASSERT_TRUE_MESSAGE(link.available(), diagnostic);
+    TEST_ASSERT_TRUE(link.available());
 }
 
 void register_timeout_tests(void) {

@@ -15,15 +15,10 @@ using namespace tinylink;
  */
 class TinyWriteResultStub : public TinyTestAdapter {
 private:
-    size_t _acceptedBytes; /**< Maximum accepted prefix for each non-empty write. */
-    bool _writeSucceeded; /**< Selects complete/partial versus failed status. */
+    size_t _acceptedBytes;
+    bool _writeSucceeded;
 
 public:
-    /**
-     * @brief Configure the accepted prefix and reported write outcome.
-     * @param acceptedBytes Number of bytes accepted, capped to request length.
-     * @param writeSucceeded Whether a non-null request reports success.
-     */
     TinyWriteResultStub(size_t acceptedBytes, bool writeSucceeded)
         : _acceptedBytes(acceptedBytes), _writeSucceeded(writeSucceeded) {}
 
