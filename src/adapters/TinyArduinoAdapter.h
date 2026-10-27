@@ -1,96 +1,137 @@
-﻿/**
- * @file TinyArduinoAdapter.h
- * @brief Arduino framework adapter for TinyLink.
+/**
+ * @file adapters/TinyArduinoAdapter.h
+ * @brief TinyLink transport adapter for an Arduino Stream.
  *
- * This adapter wraps any Arduino Stream-based object (e.g. Serial,
- * SoftwareSerial, HardwareSerial) and exposes a minimal interface used by
- * tinylink::TinyLink.
+ * The adapter is a non-owning wrapper. The supplied Stream instance must
+ * remain alive for the entire lifetime of the adapter and every TinyLink
+ * instance that uses it.
+ *
+ * Arduino Stream does not provide a generic connection-state contract.
+ * Consequently, isOpen() reports that the adapter is bound to its required
+ * Stream instance; it does not verify physical transport connectivity.
+ *
+ * Write methods return TinyWriteResult so callers can inspect the byte count
+ * reported by Stream::write().
  */
-
-#ifndef TINY_ARDUINO_ADAPTER_H
-#define TINY_ARDUINO_ADAPTER_H
+#ifndef TINYLINK_ADAPTERS_TINYARDUINOADAPTER_H
+#define TINYLINK_ADAPTERS_TINYARDUINOADAPTER_H
 
 #ifdef ARDUINO
 
 #include <Arduino.h>
+
+#include <stddef.h>
 #include <stdint.h>
 #include "../TinyWriteResult.h"
 
 namespace tinylink {
 
+/**
+ * @brief Non-owning TinyLink adapter over an Arduino Stream.
+ *
+ * The wrapped Stream must outlive this adapter. This class does not open,
+ * close, configure, or own the underlying transport.
+ */
+class TinyArduinoAdapter {
+private:
+    Stream& _port;
+
+public:
     /**
-     * @class TinyArduinoAdapter
-     * @brief Wraps Arduino Stream-based objects (Serial, SoftwareSerial, etc.) for TinyLink.
+     * @brief Construct an adapter over an existing Arduino Stream.
      *
-     * Adapter contract (required by TinyLink):
-     *   - bool          isOpen();
-     *   - int           available();
-     *   - int           read();
-     *   - TinyWriteResult write(uint8_t);
-     *   - TinyWriteResult write(const uint8_t*, size_t);
-     *   - unsigned long millis();
+     * @param port Stream used for all TinyLink reads and writes. The caller
+     * must keep @p port alive for the lifetime of this adapter.
      */
-    class TinyArduinoAdapter {
-    private:
-        Stream* _port;
+    explicit TinyArduinoAdapter(Stream& port)
+        : _port(port)
+    {}
 
-    public:
-        /**
-         * @brief Construct a new TinyArduinoAdapter.
-         * @param port Reference to an Arduino Stream object (e.g., Serial).
-         */
-        explicit TinyArduinoAdapter(Stream& port)
-            : _port(&port) {
+    /**
+     * @brief Determine whether the adapter is bound to its required Stream.
+     *
+     * A generic Arduino Stream does not expose physical connection readiness.
+     * Because construction requires a Stream reference, this method always
+     * returns true for a valid adapter object.
+     *
+     * @return Always true.
+     */
+    inline bool isOpen() const
+    {
+        return true;
+    }
+
+    /**
+     * @brief Return the number of bytes currently available to read.
+     *
+     * @return Value reported by Stream::available().
+     */
+    inline int available()
+    {
+        return _port.available();
+    }
+
+    /**
+     * @brief Read one byte from the underlying Stream.
+     *
+     * @return Byte in the range 0 through 255, or -1 when no byte is available.
+     */
+    inline int read()
+    {
+        return _port.read();
+    }
+
+    /**
+     * @brief Write one byte to the underlying Stream.
+     *
+     * The Stream::write() byte count is returned as a TinyWriteResult.
+     *
+     * @param value Byte to write.
+     */
+    inline TinyWriteResult write(uint8_t value)
+    {
+        const size_t written = _port.write(value);
+        return tiny_write_result(1, written, written == 1);
+    }
+
+    /**
+     * @brief Write a byte sequence to the underlying Stream.
+     *
+     * A zero-length request does not call Stream::write(). A null data pointer
+     * is valid only when @p length is zero.
+     *
+     * @param data Bytes to write, or nullptr when @p length is zero.
+     * @param length Number of bytes to write.
+     */
+    inline TinyWriteResult write(
+        const uint8_t* data,
+        size_t length)
+    {
+        if (length == 0) {
+            return tiny_write_result(0, 0, true);
         }
 
-        /**
-         * @brief Returns true if the underlying port pointer is valid.
-         */
-        inline bool isOpen() {
-            return _port != nullptr;
+        if (!data) {
+            return tiny_write_result(length, 0, false);
         }
 
-        /**
-         * @brief Returns the number of bytes available in the RX buffer.
-         */
-        inline int available() {
-            return (_port != nullptr) ? _port->available() : 0;
-        }
+        const size_t written = _port.write(data, length);
+        return tiny_write_result(length, written, written == length);
+    }
 
-        /**
-         * @brief Reads a single byte from the RX buffer.
-         * @return Byte in range [0,255], or -1 if no data is available.
-         */
-        inline int read() {
-            return (_port != nullptr) ? _port->read() : -1;
-        }
-
-        /**
-         * @brief Writes a single byte to the TX line.
-         */
-        inline TinyWriteResult write(uint8_t c) {
-            return write(&c, 1);
-        }
-
-        /**
-         * @brief Writes a buffer of bytes to the TX line.
-         */
-        inline TinyWriteResult write(const uint8_t* b, size_t l) {
-            if (l == 0) return tiny_write_result(0, 0, true);
-            if (!_port || !b) return tiny_write_result(l, 0, false);
-            const size_t written = _port->write(b, l);
-            return tiny_write_result(l, written, written == l);
-        }
-
-        /**
-         * @brief Returns the current system uptime in milliseconds.
-         */
-        inline unsigned long millis() {
-            return ::millis();
-        }
-    };
+    /**
+     * @brief Return Arduino system uptime in milliseconds.
+     *
+     * @return Current value of the global Arduino millis() clock.
+     */
+    inline unsigned long millis() const
+    {
+        return ::millis();
+    }
+};
 
 } // namespace tinylink
 
 #endif // ARDUINO
-#endif // TINY_ARDUINO_ADAPTER_H
+
+#endif // TINYLINK_ADAPTERS_TINYARDUINOADAPTER_H
