@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All registered in `test/test_runner.cpp`.
 
 ### Changed
+- Consumer-defined TinyLink payload types must be trivially copyable before their object
+  representation can be copied or sent as bytes. This check also applies to AVR toolchains.
 - Built-in adapter `write()` methods now return `TinyWriteResult`; source-compatible callers may
   continue to ignore the result, but custom adapter overrides must adopt the new return type.
 - `src/TinyProtocol.h` is now a lightweight umbrella header that re-exports all focused
