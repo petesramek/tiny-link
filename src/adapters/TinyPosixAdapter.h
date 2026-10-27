@@ -157,5 +157,4 @@ namespace tinylink {
 
 } // namespace tinylink
 
-#endif // _WIN32
 #endif // TINY_POSIX_ADAPTER_H
