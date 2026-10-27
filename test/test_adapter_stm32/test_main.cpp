@@ -31,8 +31,14 @@ namespace {
         TEST_ASSERT_FALSE(adapter.isOpen());
         TEST_ASSERT_EQUAL_INT(0, adapter.available());
         TEST_ASSERT_EQUAL_INT(-1, adapter.read());
-        adapter.write(1);
-        adapter.write(nullptr, 0);
+        const tinylink::TinyWriteResult failed = adapter.write(1);
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(tinylink::TinyWriteStatus::Failed),
+            static_cast<int>(failed.status));
+        const tinylink::TinyWriteResult zero = adapter.write(nullptr, 0);
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(tinylink::TinyWriteStatus::ZeroLength),
+            static_cast<int>(zero.status));
         TEST_ASSERT_EQUAL_UINT32(0, tinylinkHalTransmitCalls);
         handle.Instance = &peripheral;
     }
@@ -53,11 +59,19 @@ namespace {
     void testStm32AdapterWritesSingleAndBufferWithDocumentedTimeouts()
     {
         const uint8_t bytes[] = { 0x12u, 0x00u, 0xFEu };
-        adapter.write(0xA5u);
+        tinylink::TinyWriteResult result = adapter.write(0xA5u);
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(tinylink::TinyWriteStatus::Complete),
+            static_cast<int>(result.status));
+        TEST_ASSERT_EQUAL_UINT32(1, result.bytesWritten);
         TEST_ASSERT_EQUAL_UINT32(1, tinylinkHalTransmitCalls);
         TEST_ASSERT_EQUAL_UINT32(1, tinylinkHalTransmitLength);
         TEST_ASSERT_EQUAL_UINT32(10, tinylinkHalTransmitTimeout);
-        adapter.write(bytes, sizeof(bytes));
+        result = adapter.write(bytes, sizeof(bytes));
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(tinylink::TinyWriteStatus::Complete),
+            static_cast<int>(result.status));
+        TEST_ASSERT_EQUAL_UINT32(sizeof(bytes), result.bytesWritten);
         TEST_ASSERT_EQUAL_UINT32(2, tinylinkHalTransmitCalls);
         TEST_ASSERT_EQUAL_UINT32(sizeof(bytes), tinylinkHalTransmitLength);
         TEST_ASSERT_EQUAL_UINT32(100, tinylinkHalTransmitTimeout);
@@ -65,7 +79,10 @@ namespace {
             bytes, tinylinkHalTransmittedBytes, sizeof(bytes));
 
         tinylinkHalTransmitStatus = HAL_ERROR;
-        adapter.write(0xA6u);
+        result = adapter.write(0xA6u);
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(tinylink::TinyWriteStatus::Failed),
+            static_cast<int>(result.status));
         TEST_ASSERT_EQUAL_UINT32(3, tinylinkHalTransmitCalls);
         TEST_ASSERT_EQUAL_UINT32(10, tinylinkHalTransmitTimeout);
     }
@@ -73,13 +90,25 @@ namespace {
     void testStm32AdapterRejectsInvalidAndOversizedWrites()
     {
         const uint8_t byte = 0x55u;
-        adapter.write(nullptr, 0);
-        adapter.write(nullptr, 1);
-        adapter.write(&byte, static_cast<size_t>(UINT16_MAX) + 1u);
+        tinylink::TinyWriteResult result = adapter.write(nullptr, 0);
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(tinylink::TinyWriteStatus::ZeroLength),
+            static_cast<int>(result.status));
+        result = adapter.write(nullptr, 1);
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(tinylink::TinyWriteStatus::Failed),
+            static_cast<int>(result.status));
+        result = adapter.write(&byte, static_cast<size_t>(UINT16_MAX) + 1u);
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(tinylink::TinyWriteStatus::Failed),
+            static_cast<int>(result.status));
         TEST_ASSERT_EQUAL_UINT32(0, tinylinkHalTransmitCalls);
 
         static const uint8_t maximumTransfer[UINT16_MAX] = {};
-        adapter.write(maximumTransfer, sizeof(maximumTransfer));
+        result = adapter.write(maximumTransfer, sizeof(maximumTransfer));
+        TEST_ASSERT_EQUAL_INT(
+            static_cast<int>(tinylink::TinyWriteStatus::Complete),
+            static_cast<int>(result.status));
         TEST_ASSERT_EQUAL_UINT32(1, tinylinkHalTransmitCalls);
         TEST_ASSERT_EQUAL_UINT32(UINT16_MAX, tinylinkHalTransmitLength);
     }

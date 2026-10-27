@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `src/TinyWriteResult.h`: allocation-free adapter write outcome model, including complete,
+  partial, failed, and zero-length results; all built-in transports now report platform writes.
+- Deterministic unit tests for complete, partial, failed, and zero-length adapter write results.
 - `src/protocol/Status.h`: focused header with expanded `TinyStatus` enum (STATUS_OK, ERR_CRC,
   ERR_TIMEOUT, ERR_OVERFLOW, ERR_BUSY, ERR_PROCESSING, ERR_UNKNOWN) and `tinystatus_to_string()` helper.
 - `src/protocol/State.h`: focused header with expanded `TinyState` enum (CONNECTING, HANDSHAKING,
@@ -45,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All registered in `test/test_runner.cpp`.
 
 ### Changed
+- Built-in adapter `write()` methods now return `TinyWriteResult`; source-compatible callers may
+  continue to ignore the result, but custom adapter overrides must adopt the new return type.
 - `src/TinyProtocol.h` is now a lightweight umbrella header that re-exports all focused
   `src/protocol/*.h` headers. Existing `#include "TinyProtocol.h"` continues to work unchanged.
 - `TinyStatus` expanded with granular ACK codes (ERR_OVERFLOW, ERR_BUSY, ERR_PROCESSING,

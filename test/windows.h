@@ -75,6 +75,8 @@ static bool tinylinkWindowsClearErrorSucceeds = true;
 static bool tinylinkWindowsReadSucceeds = true;
 static bool tinylinkWindowsReadAvailable = true;
 static bool tinylinkWindowsWriteSucceeds = true;
+static bool tinylinkWindowsWriteCountOverride = false;
+static DWORD tinylinkWindowsReportedWriteCount = 0;
 static DWORD tinylinkWindowsQueuedBytes = 0;
 static DWORD tinylinkWindowsReadValue = 0;
 static DWORD tinylinkWindowsTick = 0;
@@ -96,6 +98,8 @@ inline void tinylink_reset_windows_stub()
     tinylinkWindowsReadSucceeds = true;
     tinylinkWindowsReadAvailable = true;
     tinylinkWindowsWriteSucceeds = true;
+    tinylinkWindowsWriteCountOverride = false;
+    tinylinkWindowsReportedWriteCount = 0;
     tinylinkWindowsQueuedBytes = 0;
     tinylinkWindowsReadValue = 0;
     tinylinkWindowsTick = 0;
@@ -194,7 +198,9 @@ inline BOOL WriteFile(
             tinylinkWindowsWrittenBytes[i] = bytes[i];
         }
     }
-    *bytesWritten = tinylinkWindowsWriteSucceeds ? length : 0;
+    *bytesWritten = tinylinkWindowsWriteCountOverride
+        ? tinylinkWindowsReportedWriteCount
+        : (tinylinkWindowsWriteSucceeds ? length : 0);
     return tinylinkWindowsWriteSucceeds ? TRUE : FALSE;
 }
 
