@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "../TinyWriteResult.h"
 
 namespace tinylink {
 
@@ -26,8 +27,8 @@ namespace tinylink {
      *   - bool          isOpen();
      *   - int           available();
      *   - int           read();
-     *   - void          write(uint8_t);
-     *   - void          write(const uint8_t*, size_t);
+     *   - TinyWriteResult write(uint8_t);
+     *   - TinyWriteResult write(const uint8_t*, size_t);
      *   - unsigned long millis();
      */
     class TinySTM32HALAdapter {
@@ -76,18 +77,24 @@ namespace tinylink {
         /**
          * @brief Transmits a single byte via HAL polling.
          */
-        inline void write(uint8_t c) {
-            if (!isOpen()) return;
-            HAL_UART_Transmit(_huart, &c, 1, 10);
+        inline TinyWriteResult write(uint8_t c) {
+            if (!isOpen()) return tiny_write_result(1, 0, false);
+            const HAL_StatusTypeDef status = HAL_UART_Transmit(_huart, &c, 1, 10);
+            const bool succeeded = status == HAL_OK;
+            return tiny_write_result(1, succeeded ? 1 : 0, succeeded);
         }
 
         /**
          * @brief Transmits a buffer of bytes via HAL polling.
          */
-        inline void write(const uint8_t* b, size_t l) {
-            if (!isOpen() || !b || l == 0) return;
-            HAL_UART_Transmit(_huart, const_cast<uint8_t*>(b),
-                static_cast<uint16_t>(l), 100);
+        inline TinyWriteResult write(const uint8_t* b, size_t l) {
+            if (l == 0) return tiny_write_result(0, 0, true);
+            if (!isOpen() || !b || l > UINT16_MAX)
+                return tiny_write_result(l, 0, false);
+            const HAL_StatusTypeDef status = HAL_UART_Transmit(
+                _huart, const_cast<uint8_t*>(b), static_cast<uint16_t>(l), 100);
+            const bool succeeded = status == HAL_OK;
+            return tiny_write_result(l, succeeded ? l : 0, succeeded);
         }
 
         /**

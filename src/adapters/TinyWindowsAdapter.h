@@ -14,6 +14,7 @@
 #include <windows.h>
 #include <stdint.h>
 #include <stddef.h>
+#include "../TinyWriteResult.h"
 
 namespace tinylink {
 
@@ -25,8 +26,8 @@ namespace tinylink {
      *   - bool          isOpen();
      *   - int           available();
      *   - int           read();
-     *   - void          write(uint8_t);
-     *   - void          write(const uint8_t*, size_t);
+     *   - TinyWriteResult write(uint8_t);
+     *   - TinyWriteResult write(const uint8_t*, size_t);
      *   - unsigned long millis();
      */
     class TinyWindowsAdapter {
@@ -128,19 +129,21 @@ namespace tinylink {
         /**
          * @brief Writes a single byte to the COM port.
          */
-        inline void write(uint8_t c) {
-            if (!isOpen()) return;
-            DWORD w = 0;
-            (void)WriteFile(_h, &c, 1, &w, NULL);
+        inline TinyWriteResult write(uint8_t c) {
+            return write(&c, 1);
         }
 
         /**
          * @brief Writes a buffer of bytes to the COM port.
          */
-        inline void write(const uint8_t* b, size_t l) {
-            if (!isOpen() || !b || l == 0) return;
-            DWORD w = 0;
-            (void)WriteFile(_h, b, static_cast<DWORD>(l), &w, NULL);
+        inline TinyWriteResult write(const uint8_t* b, size_t l) {
+            if (l == 0) return tiny_write_result(0, 0, true);
+            if (!isOpen() || !b || l > MAXDWORD)
+                return tiny_write_result(l, 0, false);
+            DWORD written = 0;
+            const bool succeeded = WriteFile(
+                _h, b, static_cast<DWORD>(l), &written, NULL) ? true : false;
+            return tiny_write_result(l, static_cast<size_t>(written), succeeded);
         }
 
         /**

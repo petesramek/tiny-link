@@ -15,8 +15,13 @@ struct TestPayload {
  */
 class LoopbackAdapter : public tinylink::TinyTestAdapter {
 public:
-    void write(uint8_t c) override { inject(&c, 1); }
-    void write(const uint8_t* b, size_t l) override { inject(b, l); }
+    tinylink::TinyWriteResult write(uint8_t c) override { return write(&c, 1); }
+    tinylink::TinyWriteResult write(const uint8_t* b, size_t l) override {
+        if (l == 0) return tinylink::tiny_write_result(0, 0, true);
+        if (!b) return tinylink::tiny_write_result(l, 0, false);
+        inject(b, l);
+        return tinylink::tiny_write_result(l, l, true);
+    }
 };
 
 /** @brief Loopback adapter instance */

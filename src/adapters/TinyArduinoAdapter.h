@@ -14,6 +14,7 @@
 
 #include <Arduino.h>
 #include <stdint.h>
+#include "../TinyWriteResult.h"
 
 namespace tinylink {
 
@@ -25,8 +26,8 @@ namespace tinylink {
      *   - bool          isOpen();
      *   - int           available();
      *   - int           read();
-     *   - void          write(uint8_t);
-     *   - void          write(const uint8_t*, size_t);
+     *   - TinyWriteResult write(uint8_t);
+     *   - TinyWriteResult write(const uint8_t*, size_t);
      *   - unsigned long millis();
      */
     class TinyArduinoAdapter {
@@ -67,15 +68,18 @@ namespace tinylink {
         /**
          * @brief Writes a single byte to the TX line.
          */
-        inline void write(uint8_t c) {
-            if (_port) _port->write(c);
+        inline TinyWriteResult write(uint8_t c) {
+            return write(&c, 1);
         }
 
         /**
          * @brief Writes a buffer of bytes to the TX line.
          */
-        inline void write(const uint8_t* b, size_t l) {
-            if (_port && b && l > 0) _port->write(b, l);
+        inline TinyWriteResult write(const uint8_t* b, size_t l) {
+            if (l == 0) return tiny_write_result(0, 0, true);
+            if (!_port || !b) return tiny_write_result(l, 0, false);
+            const size_t written = _port->write(b, l);
+            return tiny_write_result(l, written, written == l);
         }
 
         /**

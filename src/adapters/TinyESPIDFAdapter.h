@@ -15,6 +15,7 @@
 #include "esp_timer.h"
 #include <stdint.h>
 #include <stddef.h>
+#include "../TinyWriteResult.h"
 
 namespace tinylink {
 
@@ -26,8 +27,8 @@ namespace tinylink {
      *   - bool          isOpen();
      *   - int           available();
      *   - int           read();
-     *   - void          write(uint8_t);
-     *   - void          write(const uint8_t*, size_t);
+     *   - TinyWriteResult write(uint8_t);
+     *   - TinyWriteResult write(const uint8_t*, size_t);
      *   - unsigned long millis();
      */
     class TinyESPIDFAdapter {
@@ -79,17 +80,21 @@ namespace tinylink {
         /**
          * @brief Writes a single byte to the UART TX buffer.
          */
-        inline void write(uint8_t c) {
-            if (!_is_installed) return;
-            uart_write_bytes(_uart_num, reinterpret_cast<const char*>(&c), 1);
+        inline TinyWriteResult write(uint8_t c) {
+            return write(&c, 1);
         }
 
         /**
          * @brief Writes a buffer of bytes to the UART TX buffer.
          */
-        inline void write(const uint8_t* b, size_t l) {
-            if (!_is_installed || !b || l == 0) return;
-            uart_write_bytes(_uart_num, reinterpret_cast<const char*>(b), l);
+        inline TinyWriteResult write(const uint8_t* b, size_t l) {
+            if (l == 0) return tiny_write_result(0, 0, true);
+            if (!_is_installed || !b) return tiny_write_result(l, 0, false);
+            const int written = uart_write_bytes(
+                _uart_num, reinterpret_cast<const char*>(b), l);
+            const bool succeeded = written >= 0;
+            return tiny_write_result(
+                l, succeeded ? static_cast<size_t>(written) : 0, succeeded);
         }
 
         /**

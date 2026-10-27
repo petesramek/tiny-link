@@ -30,12 +30,15 @@ namespace tinylink {
         /** @brief Point this adapter's TX at the peer's RX buffer. */
         void connect(TinyDuplexTestAdapter& peer) { _peer = &peer; }
 
-        void write(uint8_t c) override {
-            if (_peer) _peer->inject(&c, 1);
+        TinyWriteResult write(uint8_t c) override {
+            return write(&c, 1);
         }
 
-        void write(const uint8_t* buf, size_t len) override {
-            if (_peer) _peer->inject(buf, len);
+        TinyWriteResult write(const uint8_t* buf, size_t len) override {
+            if (len == 0) return tiny_write_result(0, 0, true);
+            if (!_peer || !buf) return tiny_write_result(len, 0, false);
+            _peer->inject(buf, len);
+            return tiny_write_result(len, len, true);
         }
     };
 

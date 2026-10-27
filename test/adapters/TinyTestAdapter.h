@@ -12,6 +12,7 @@
 #include <vector>
 #include <stdint.h>
 #include <stddef.h>
+#include "../../src/TinyWriteResult.h"
 
 namespace tinylink {
 
@@ -23,8 +24,8 @@ namespace tinylink {
      *   - bool          isOpen();
      *   - int           available();
      *   - int           read();
-     *   - void          write(uint8_t);            // default: sink
-     *   - void          write(const uint8_t*, size_t); // default: sink
+     *   - TinyWriteResult write(uint8_t);            // default: sink
+     *   - TinyWriteResult write(const uint8_t*, size_t); // default: sink
      *   - unsigned long millis();
      *
      * Additionally provides:
@@ -98,17 +99,17 @@ namespace tinylink {
          * @brief Virtual write method (override in loopback tests).
          * Default implementation discards the byte.
          */
-        virtual void write(uint8_t c) {
-            (void)c; // sink by default
+        virtual TinyWriteResult write(uint8_t c) {
+            return write(&c, 1);
         }
 
         /**
          * @brief Virtual write method (override in loopback tests).
          * Default implementation discards the buffer.
          */
-        virtual void write(const uint8_t* b, size_t l) {
-            (void)b;
-            (void)l; // sink by default
+        virtual TinyWriteResult write(const uint8_t* b, size_t l) {
+            if (l == 0) return tiny_write_result(0, 0, true);
+            return tiny_write_result(l, b ? l : 0, b != nullptr);
         }
 
         /**
