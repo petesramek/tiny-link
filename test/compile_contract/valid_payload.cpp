@@ -1,10 +1,12 @@
 #include "CompileAdapter.h"
 
+/** Trivial packed payload accepted by the TinyLink payload contract. */
 struct ValidPayload {
     uint8_t id;
     uint16_t value;
 } __attribute__((packed));
 
+/** Exact protocol payload-size limit accepted by the compile contract. */
 struct MaximumPayload {
     uint8_t bytes[64];
 };
