@@ -25,9 +25,8 @@ Some loop-based tests could improve failure diagnostics by reporting the input v
 
 I would expect those to be applied by default without explicit definition as a standard for a production-quality test suite:
 
-- The test structure does not reflect the structure under `src`, making related production and test files harder to locate.
+- The test structure does not reflect the structure under `src`, making related production and test files harder to locate. The flat layout makes the test folder harder to navigate and would not scale well in a larger project.
 - Platform stubs are organized inconsistently. The ESP-IDF UART stub uses a `driver` directory, while the other stubs are placed directly in the test root.
-- The flat layout makes the test folder harder to navigate and would not scale well in a larger project.
 - The TinyLink.h tests are concentrated in one large test file instead of being split by responsibility, such as handshake, application traffic, acknowledgements, receive handling, timing, and lifecycle behavior.
 - None of the generated test code contains documentation comments. Clear test names describe individual cases, but shared helpers and platform stubs should document their purpose, intended use, limitations, and differences from real platform implementations. Without that context, they are easier to misunderstand or misuse.
 - The POSIX adapter was omitted, and the omission was not reported.
