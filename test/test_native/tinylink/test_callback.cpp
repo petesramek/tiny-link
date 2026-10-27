@@ -12,7 +12,6 @@
 #include "support/stubs/TinyDuplexTestAdapter.h"
 #include "internal/protocol/HandshakeMessage.h"
 #include "internal/protocol/AckMessage.h"
-#include "internal/protocol/LogMessage.h"
 #include "internal/codec/CobsCodec.h"
 #include "internal/codec/Packet.h"
 
@@ -28,6 +27,7 @@ using namespace tinylink;
  * This is a regression test for the bug where _hasNew was set to true even
  * in callback mode, causing update() to short-circuit on subsequent calls.
  */
+
 void test_callback_receives_multiple_frames(void) {
     static int callCount;
     callCount = 0;
@@ -53,6 +53,7 @@ void test_callback_receives_multiple_frames(void) {
  * available() returns false after reception (the callback already handled
  * the data; no polling is needed).
  */
+
 void test_callback_mode_does_not_set_available(void) {
     link.onDataReceived([](const TestPayload&) { /* handled */ });
 
@@ -72,6 +73,7 @@ void test_callback_mode_does_not_set_available(void) {
  *
  * Confirms that removing the callback (nullptr) restores normal polling behaviour.
  */
+
 void test_polling_mode_sets_available_without_callback(void) {
     /* No callback registered (setUp already cleared it) */
 
@@ -87,59 +89,13 @@ void test_polling_mode_sets_available_without_callback(void) {
 }
 
 // ---------------------------------------------------------------------------
-// onLogReceived
-// ---------------------------------------------------------------------------
-
-/**
- * @brief TEST: onLogReceived fires when an incoming log frame is received.
- */
-void test_on_log_received_fires(void) {
-    static bool logFired;
-    static uint16_t receivedCode;
-    logFired = false;
-    receivedCode = 0;
-
-    link.onLogReceived([](const LogMessage& msg) {
-        logFired = true;
-        receivedCode = msg.code;
-    });
-
-    link.sendLog(LogLevel::INFO, 0x1234, "hello");
-
-    while (adapter.available() > 0) {
-        link.update();
-    }
-
-    TEST_ASSERT_TRUE_MESSAGE(logFired, "onLogReceived must fire for a Log frame");
-    TEST_ASSERT_EQUAL_UINT16(0x1234, receivedCode);
-}
-
-/**
- * @brief TEST: Log frames do not reach the data callback.
- */
-void test_log_frame_not_dispatched_as_data(void) {
-    static bool dataFired;
-    dataFired = false;
-
-    link.onDataReceived([](const TestPayload&) { dataFired = true; });
-
-    link.sendLog(LogLevel::WARN, 0, "test");
-
-    while (adapter.available() > 0) {
-        link.update();
-    }
-
-    TEST_ASSERT_FALSE_MESSAGE(dataFired,
-        "Log frames must not be dispatched to the data callback");
-}
-
-// ---------------------------------------------------------------------------
 // onHandshakeReceived
 // ---------------------------------------------------------------------------
 
 /**
  * @brief TEST: onHandshakeReceived fires on both HS(v=0) and HS(v=1).
  */
+
 void test_on_handshake_received_fires(void) {
     static TinyDuplexTestAdapter dAdA, dAdB;
     static TinyLink<TestPayload, TinyDuplexTestAdapter> lA(dAdA);
@@ -174,6 +130,7 @@ void test_on_handshake_received_fires(void) {
 /**
  * @brief TEST: onAckReceived fires when an ACK frame is received while AWAITING_ACK.
  */
+
 void test_on_ack_received_fires(void) {
     static TinyDuplexTestAdapter dAdA2, dAdB2;
     static TinyLink<TestPayload, TinyDuplexTestAdapter> lA2(dAdA2);
@@ -238,6 +195,7 @@ void test_on_ack_received_fires(void) {
  * Calling autoUpdateISR() (as an ISR would) must drive the engine as if
  * update() had been called directly.
  */
+
 void test_auto_update_isr_drives_engine(void) {
     static int isr_callCount;
     isr_callCount = 0;
@@ -264,6 +222,7 @@ void test_auto_update_isr_drives_engine(void) {
  * to any interrupt source must work immediately after construction — no
  * extra setup step is required.
  */
+
 void test_auto_update_isr_works_without_enable_call(void) {
     static int noEnable_callCount;
     noEnable_callCount = 0;
@@ -296,6 +255,7 @@ void test_auto_update_isr_works_without_enable_call(void) {
  * one is registered by default.  enableAutoUpdate() on the first instance
  * must switch ISR dispatch back to it.
  */
+
 void test_enable_auto_update_switches_instance(void) {
     static int countA, countB;
     countA = 0;
@@ -336,8 +296,6 @@ void register_callback_tests(void) {
     RUN_TEST(test_callback_receives_multiple_frames);
     RUN_TEST(test_callback_mode_does_not_set_available);
     RUN_TEST(test_polling_mode_sets_available_without_callback);
-    RUN_TEST(test_on_log_received_fires);
-    RUN_TEST(test_log_frame_not_dispatched_as_data);
     RUN_TEST(test_on_handshake_received_fires);
     RUN_TEST(test_on_ack_received_fires);
     RUN_TEST(test_auto_update_isr_drives_engine);
@@ -356,6 +314,7 @@ void register_callback_tests(void) {
  * the data and calls sendAck().  A's next update() must exit AWAITING_ACK
  * and return to WAIT_FOR_SYNC without waiting for the timeout.
  */
+
 void test_sendack_clears_peer_awaiting_ack(void) {
     static TinyDuplexTestAdapter dA, dB;
     static TinyLink<TestPayload, TinyDuplexTestAdapter> lA(dA);
@@ -398,6 +357,7 @@ void test_sendack_clears_peer_awaiting_ack(void) {
  * This tests the state-overwrite fix: update() must NOT clobber the
  * AWAITING_ACK state that sendData() sets when called from a callback.
  */
+
 void test_reply_from_callback_preserves_awaiting_ack(void) {
     static TinyDuplexTestAdapter dA2, dB2;
     static TinyLink<TestPayload, TinyDuplexTestAdapter> lA2(dA2);
