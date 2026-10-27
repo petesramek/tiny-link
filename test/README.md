@@ -48,8 +48,6 @@ All three prompts were run sequentially in one GitHub Copilot session. Each prom
 
 ### Fletcher-16 test infrastructure and coverage
 
-**Result:** [PR #32](https://github.com/petesramek/tiny-link/pull/32)
-
 <details>
 <summary>Full prompt</summary>
 
@@ -97,9 +95,9 @@ Stop after the complete Fletcher-16 test suite passes.
 
 </details>
 
-### TinyLink engine coverage
+**Result:** [PR #32](https://github.com/petesramek/tiny-link/pull/32)
 
-**Result:** [PR #33](https://github.com/petesramek/tiny-link/pull/33)
+### TinyLink engine coverage
 
 <details>
 <summary>Full prompt</summary>
@@ -211,9 +209,9 @@ Stop after the comprehensive `TinyLink.h` native test suite passes, or after rep
 
 </details>
 
-### Remaining native coverage
+**Result:** [PR #33](https://github.com/petesramek/tiny-link/pull/33)
 
-**Result:** [PR #34](https://github.com/petesramek/tiny-link/pull/34)
+### Remaining native coverage
 
 <details>
 <summary>Full prompt</summary>
@@ -420,3 +418,5 @@ Do not modify production code and do not continue into CI, examples, documentati
 ```
 
 </details>
+
+**Result:** [PR #34](https://github.com/petesramek/tiny-link/pull/34)
