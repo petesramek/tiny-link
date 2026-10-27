@@ -37,6 +37,21 @@ retry. Because bytes from a partial frame may already be on the wire, do not ret
 until it is synchronized again: recover/reopen and flush the transport endpoints, or let the
 receiver's inter-byte timeout discard the incomplete frame before sending another one.
 
+## Connection and transport lifecycle
+
+`connected()` represents both current adapter availability (`isOpen()`) and protocol readiness.
+In basic mode (before `begin()`), an available adapter is connected; in handshake mode, the
+connection is ready only after the handshake completes. Call `update()` regularly so the engine
+can observe adapter closure: it transitions to `TinyState::FAILED`, clears any partial receive
+frame, and drops a pending ACK expectation. A fully sent data frame is not retransmitted after
+transport loss; its sequence remains consumed, and the application decides whether to send it
+again.
+
+When `update()` observes the adapter available again, basic mode returns to `WAIT_FOR_SYNC`.
+Handshake mode automatically sends a new handshake and remains disconnected in `CONNECTING` until
+the peer replies. `FAILED` means only that the adapter was observed unavailable; it is recoverable,
+not a terminal protocol error. Already-delivered polling data remains available until `flush()`.
+
 ---
 
 ## 🛠 Installation

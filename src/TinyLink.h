@@ -143,6 +143,7 @@ namespace tinylink {
 
         TinyState     _state;
         bool          _handshakeEnabled;
+        bool          _transportLost;
         unsigned long _lastHandshakeSent;
         unsigned long _lastSent;          // timestamp of last sendData(), for AWAITING_ACK timeout
 
@@ -199,6 +200,39 @@ namespace tinylink {
                     priorState == TinyState::CONNECTING)
                    ? priorState
                    : TinyState::WAIT_FOR_SYNC;
+        }
+
+        void markTransportLost() {
+            if (_transportLost) return;
+            _transportLost = true;
+            _state = TinyState::FAILED;
+            _rawIdx = 0;
+            _lastByte = 0;
+            _lastSent = 0;
+            _lastHandshakeSent = 0;
+            _hasReceivedSequence = false;
+        }
+
+        void restoreTransport(unsigned long now) {
+            if (!_transportLost) return;
+            _transportLost = false;
+            _rawIdx = 0;
+            _lastByte = 0;
+            _lastSent = 0;
+            _hasReceivedSequence = false;
+
+            if (!_handshakeEnabled) {
+                _state = TinyState::WAIT_FOR_SYNC;
+                return;
+            }
+
+            _state = TinyState::CONNECTING;
+            _lastHandshakeSent = now;
+            HandshakeMessage m;
+            m.version = 0;
+            send_internal(message_type_to_wire(MessageType::Handshake), 0,
+                          reinterpret_cast<const uint8_t*>(&m), sizeof(m),
+                          /*isInternal=*/true);
         }
 
         // ---- Handshake handler (symmetric two-frame exchange) ---------------
@@ -267,7 +301,8 @@ namespace tinylink {
               _rawIdx(0), _currType(0), _currSeq(0), _receivedSeq(0), _nextSeq(0),
               _hasNew(false), _hasReceivedSequence(false), _lastByte(0), _timeout(250),
               _state(TinyState::WAIT_FOR_SYNC),
-              _handshakeEnabled(false), _lastHandshakeSent(0), _lastSent(0)
+              _handshakeEnabled(false), _transportLost(false),
+              _lastHandshakeSent(0), _lastSent(0)
         {
             static_assert(sizeof(T) <= 64,
                 "TinyLink: Payload exceeds 64 bytes. "
@@ -380,11 +415,18 @@ namespace tinylink {
          *
          * Data frames (sendData) are blocked until connected() returns true.
          * Calling begin() again re-initiates the handshake from CONNECTING.
+         * After an observed transport loss, update() automatically starts a
+         * fresh handshake when the adapter becomes available again.
          */
         bool begin() {
-            if (!_hw->isOpen()) return false;
-            _hasReceivedSequence = false;
             _handshakeEnabled = true;
+            if (!_hw->isOpen()) {
+                markTransportLost();
+                return false;
+            }
+            _transportLost = false;
+            _rawIdx = 0;
+            _hasReceivedSequence = false;
             _state            = TinyState::CONNECTING;
             _lastHandshakeSent = _hw->millis();
             HandshakeMessage m;
@@ -403,6 +445,7 @@ namespace tinylink {
         void reset() {
             _handshakeEnabled  = false;
             _state             = TinyState::WAIT_FOR_SYNC;
+            _transportLost     = false;
             _rawIdx            = 0;
             _hasNew            = false;
             _currType          = 0;
@@ -426,16 +469,19 @@ namespace tinylink {
         // ---- Status ---------------------------------------------------------
 
         /**
-         * @brief True when the link is ready to exchange data frames.
+         * @brief True when the transport is available and the protocol is ready.
          *
-         * Basic mode (begin() never called): true as long as the hardware
-         * port is open.
+         * This reports both transport availability and protocol readiness.
+         * Basic mode (begin() never called): true while the adapter is open
+         * and the engine is not in FAILED.
          *
          * Handshake mode (after begin()): true only once CONNECTING has
-         * resolved to WAIT_FOR_SYNC or a data-phase state.
+         * resolved to a data-phase state, and while the adapter is open.
+         * Call update() regularly to observe transport loss and restoration.
          */
         bool connected() const {
-            if (!_hw->isOpen()) return false;
+            if (!_hw->isOpen() || _transportLost ||
+                    _state == TinyState::FAILED) return false;
             if (!_handshakeEnabled) return true;
             return _state != TinyState::CONNECTING;
         }
@@ -653,9 +699,14 @@ namespace tinylink {
         // RX state machine, and dispatches complete frames.
         //
         void update() {
-            if (!_hw->isOpen() || _hasNew) return;
+            if (!_hw->isOpen()) {
+                markTransportLost();
+                return;
+            }
 
             unsigned long now = _hw->millis();
+            restoreTransport(now);
+            if (_hasNew) return;
             tickHandshake(now);
             tickTimeouts(now);
 
@@ -685,7 +736,11 @@ namespace tinylink {
         // @return true if the complete frame was accepted; false if the port
         //         is closed, the link is not connected, or output was incomplete.
         bool sendData(uint8_t type, const T& payload) {
-            if (!_hw->isOpen()) return false;
+            if (!_hw->isOpen()) {
+                markTransportLost();
+                return false;
+            }
+            if (_transportLost || _state == TinyState::FAILED) return false;
             if (_handshakeEnabled && !connected()) return false;
 
             const size_t TX_PLAIN = 3 + sizeof(T) + 2;
@@ -740,6 +795,11 @@ namespace tinylink {
         //         or output was incomplete.
         //
         bool sendAck(TinyStatus result = TinyStatus::STATUS_OK) {
+            if (!_hw->isOpen()) {
+                markTransportLost();
+                return false;
+            }
+            if (_transportLost || _state == TinyState::FAILED) return false;
             if (!_hasReceivedSequence) return false;
             TinyAck ack;
             ack.seq    = _receivedSeq;
@@ -760,7 +820,11 @@ namespace tinylink {
         //         is closed or output was incomplete.
         //
         bool sendLog(LogLevel level, uint16_t code, const char* text) {
-            if (!_hw->isOpen()) return false;
+            if (!_hw->isOpen()) {
+                markTransportLost();
+                return false;
+            }
+            if (_transportLost || _state == TinyState::FAILED) return false;
 
             LogMessage msg;
             msg.ts    = static_cast<uint32_t>(_hw->millis());

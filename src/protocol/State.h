@@ -33,13 +33,22 @@ namespace tinylink {
      *   sendData() in handshake mode
      *       → AWAITING_ACK  : Data frame sent; waiting for an explicit Ack reply.
      *                         Returns to WAIT_FOR_SYNC on receipt of Ack or timeout.
+     *
+     *   update() observes adapter isOpen() == false
+     *       → FAILED        : Transport is unavailable. Partial RX and any
+     *                         pending ACK expectation are discarded.
+     *
+     *   update() observes the transport restored
+     *       → CONNECTING    : Handshake mode automatically starts a new
+     *                         handshake; basic mode returns to WAIT_FOR_SYNC.
      */
     enum class TinyState : uint8_t {
         CONNECTING,     /**< begin() sent HS(v=0); waiting for peer's HS reply */
         WAIT_FOR_SYNC,  /**< Connected and idle; waiting for next 0x00 frame delimiter */
         IN_FRAME,       /**< Accumulating COBS-encoded bytes between 0x00 delimiters */
         FRAME_COMPLETE, /**< 0x00 delimiter received; decoding and dispatching frame */
-        AWAITING_ACK    /**< Data frame sent (handshake mode); waiting for Ack reply */
+        AWAITING_ACK,   /**< Data frame sent (handshake mode); waiting for Ack reply */
+        FAILED          /**< Adapter is unavailable; recoverable on transport restoration */
     };
 
 } // namespace tinylink

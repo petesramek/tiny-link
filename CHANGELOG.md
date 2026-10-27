@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a transmit sequence or enter `AWAITING_ACK`, and a failed handshake response does not
   complete the connection transition.
 
+### Changed
+- Adapter loss observed by `update()` now enters `TinyState::FAILED`, clears partial receive data
+  and pending ACK expectation, and automatically restarts the handshake after transport
+  restoration. `connected()` represents both transport availability and protocol readiness.
+
 ### Added
 - `TelemetryEvent` mapping for centralized TinyStats increments and regression tests for counter
   saturation and received-sequence ACK validity.

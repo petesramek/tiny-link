@@ -327,6 +327,125 @@ void test_data_received_while_awaiting_ack(void) {
     TEST_ASSERT_EQUAL(TinyState::AWAITING_ACK, linkA.state());
 }
 
+/** @test Transport loss clears partial RX and restoration requires a fresh handshake. */
+void test_transport_loss_clears_partial_receive_and_reconnects(void) {
+    setUpDuplex();
+    linkA.begin();
+    linkB.begin();
+    pumpUntilIdle();
+    TEST_ASSERT_TRUE(linkA.connected());
+
+    const uint8_t partial[] = {0x05, 0x44};
+    dAdapterA.inject(partial, sizeof(partial));
+    linkA.update();
+    TEST_ASSERT_EQUAL(TinyState::IN_FRAME, linkA.state());
+
+    dAdapterA.setOpen(false);
+    linkA.update();
+    TEST_ASSERT_EQUAL(TinyState::FAILED, linkA.state());
+    TEST_ASSERT_FALSE(linkA.connected());
+
+    dAdapterA.setOpen(true);
+    linkA.update();
+    TEST_ASSERT_EQUAL(TinyState::CONNECTING, linkA.state());
+    TEST_ASSERT_FALSE(linkA.connected());
+    TEST_ASSERT_GREATER_THAN(0, dAdapterB.available());
+
+    pumpUntilIdle();
+    TEST_ASSERT_EQUAL(TinyState::WAIT_FOR_SYNC, linkA.state());
+    TEST_ASSERT_TRUE(linkA.connected());
+
+    static bool received = false;
+    received = false;
+    linkA.onDataReceived([](const TestPayload& p) {
+        if (p.uptime == 0x1234) received = true;
+    });
+    TestPayload payload = {0x1234, 4.5f};
+    TEST_ASSERT_TRUE(linkB.sendData(
+        static_cast<uint8_t>(MessageType::Data), payload));
+    pumpUntilIdle();
+    TEST_ASSERT_TRUE_MESSAGE(received,
+        "A new frame was affected by partial RX data from before transport loss");
+}
+
+/** @test Loss while awaiting ACK discards that wait, but keeps consumed sequence numbers. */
+void test_transport_loss_discards_pending_ack_and_reconnects(void) {
+    setUpDuplex();
+    linkA.begin();
+    linkB.begin();
+    pumpUntilIdle();
+
+    TestPayload first = {50, 5.0f};
+    TEST_ASSERT_TRUE(linkA.sendData(static_cast<uint8_t>(MessageType::Data), first));
+    const uint8_t firstSequence = linkA.seq();
+    TEST_ASSERT_EQUAL(TinyState::AWAITING_ACK, linkA.state());
+    linkB.update();
+    TEST_ASSERT_TRUE(linkB.available());
+    linkB.flush();
+
+    dAdapterA.setOpen(false);
+    linkA.update();
+    TEST_ASSERT_EQUAL(TinyState::FAILED, linkA.state());
+    TEST_ASSERT_FALSE(linkA.connected());
+
+    dAdapterA.setOpen(true);
+    linkA.update();
+    TEST_ASSERT_EQUAL(TinyState::CONNECTING, linkA.state());
+    TEST_ASSERT_FALSE(linkA.connected());
+    TestPayload blocked = {51, 5.1f};
+    TEST_ASSERT_FALSE(linkA.sendData(static_cast<uint8_t>(MessageType::Data), blocked));
+
+    pumpUntilIdle();
+    TEST_ASSERT_EQUAL(TinyState::WAIT_FOR_SYNC, linkA.state());
+    TEST_ASSERT_TRUE(linkA.connected());
+
+    TestPayload second = {52, 5.2f};
+    TEST_ASSERT_TRUE(linkA.sendData(static_cast<uint8_t>(MessageType::Data), second));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(firstSequence + 1), linkA.seq());
+    TEST_ASSERT_EQUAL(TinyState::AWAITING_ACK, linkA.state());
+}
+
+/** @test FAILED is a recoverable transport-unavailable state, including in basic mode. */
+void test_failed_state_contract_in_basic_mode(void) {
+    setUpDuplex();
+    linkA.reset();
+    dAdapterA.setOpen(false);
+    linkA.update();
+
+    TEST_ASSERT_EQUAL(TinyState::FAILED, linkA.state());
+    TEST_ASSERT_FALSE(linkA.connected());
+
+    dAdapterA.setOpen(true);
+    TestPayload notYetRestored = {60, 6.0f};
+    TEST_ASSERT_FALSE(linkA.sendData(
+        static_cast<uint8_t>(MessageType::Data), notYetRestored));
+    linkA.update();
+    TEST_ASSERT_EQUAL(TinyState::WAIT_FOR_SYNC, linkA.state());
+    TEST_ASSERT_TRUE(linkA.connected());
+    TEST_ASSERT_EQUAL_INT(0, dAdapterB.available());
+}
+
+/** @test begin() requested while unavailable is retried as a handshake on restoration. */
+void test_begin_while_unavailable_reconnects_with_handshake(void) {
+    setUpDuplex();
+    dAdapterA.setOpen(false);
+
+    TEST_ASSERT_FALSE(linkA.begin());
+    TEST_ASSERT_EQUAL(TinyState::FAILED, linkA.state());
+    TEST_ASSERT_FALSE(linkA.connected());
+
+    dAdapterA.setOpen(true);
+    linkA.update();
+    TEST_ASSERT_EQUAL(TinyState::CONNECTING, linkA.state());
+    TEST_ASSERT_FALSE(linkA.connected());
+    TEST_ASSERT_GREATER_THAN(0, dAdapterB.available());
+
+    linkB.update();
+    linkA.update();
+    TEST_ASSERT_EQUAL(TinyState::WAIT_FOR_SYNC, linkA.state());
+    TEST_ASSERT_TRUE(linkA.connected());
+}
+
 // ---------------------------------------------------------------------------
 // reset()
 // ---------------------------------------------------------------------------
@@ -387,6 +506,10 @@ void register_handshake_tests(void) {
     RUN_TEST(test_ack_clears_awaiting_ack);
     RUN_TEST(test_awaiting_ack_timeout);
     RUN_TEST(test_data_received_while_awaiting_ack);
+    RUN_TEST(test_transport_loss_clears_partial_receive_and_reconnects);
+    RUN_TEST(test_transport_loss_discards_pending_ack_and_reconnects);
+    RUN_TEST(test_failed_state_contract_in_basic_mode);
+    RUN_TEST(test_begin_while_unavailable_reconnects_with_handshake);
 
     // reset()
     RUN_TEST(test_reset_clears_handshake_state);

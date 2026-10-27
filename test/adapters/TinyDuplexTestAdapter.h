@@ -23,12 +23,18 @@ namespace tinylink {
 
     class TinyDuplexTestAdapter : public TinyTestAdapter {
         TinyDuplexTestAdapter* _peer;
+        bool _open;
 
     public:
-        TinyDuplexTestAdapter() : _peer(nullptr) {}
+        TinyDuplexTestAdapter() : _peer(nullptr), _open(true) {}
 
         /** @brief Point this adapter's TX at the peer's RX buffer. */
         void connect(TinyDuplexTestAdapter& peer) { _peer = &peer; }
+
+        /** @brief Simulate the transport becoming available or unavailable. */
+        void setOpen(bool open) { _open = open; }
+
+        bool isOpen() override { return _open; }
 
         TinyWriteResult write(uint8_t c) override {
             return write(&c, 1);
