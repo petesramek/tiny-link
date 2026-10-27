@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   complete the connection transition.
 
 ### Changed
+- Native test support stubs and boundary-focused cases now document simulation
+  limits and include input context in loop failure diagnostics.
 - Adapter loss observed by `update()` now enters `TinyState::FAILED`, clears partial receive data
   and pending ACK expectation, and automatically restarts the handshake after transport
   restoration. `connected()` represents both transport availability and protocol readiness.

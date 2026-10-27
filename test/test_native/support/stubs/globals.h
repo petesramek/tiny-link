@@ -3,15 +3,23 @@
 #include "TinyLink.h"
 #include "TinyTestAdapter.h"
 
-/** @brief Sample payload to test struct alignment and float precision */
+/**
+ * @brief Shared packed payload for loopback and duplex protocol tests.
+ *
+ * Packing keeps the transmitted representation at exactly eight bytes so
+ * tests can detect accidental padding as well as float/field corruption.
+ */
 struct TestPayload {
     uint32_t uptime;
     float value;
 } __attribute__((packed));
 
-/** 
+/**
  * @class LoopbackAdapter
- * @brief Simulates a physical wire by piping TX directly into the RX buffer.
+ * @brief In-memory, single-end loopback transport used by shared native tests.
+ *
+ * Transmitted bytes are immediately injected into this adapter's RX buffer;
+ * it intentionally does not model physical serial timing or flow control.
  */
 class LoopbackAdapter : public tinylink::TinyTestAdapter {
 public:
@@ -24,11 +32,11 @@ public:
     }
 };
 
-/** @brief Loopback adapter instance */
+/** @brief Shared loopback transport; reset and drained by the Unity fixture. */
 extern LoopbackAdapter adapter;
-/** @brief TinyLink instance using the LoopbackAdapter */
+/** @brief Shared link under test, constructed over @ref adapter. */
 extern tinylink::TinyLink<TestPayload, LoopbackAdapter> link;
-/** @brief Global flag for callback verification */
+/** @brief Callback result flag; setUp() clears it before each test. */
 extern bool g_callbackTriggered;
-/** @brief Callback function for testing */
+/** @brief Minimal callback that records invocation in @ref g_callbackTriggered. */
 extern void testCallback(const TestPayload& data);

@@ -15,6 +15,7 @@ EXPECTED_DIAGNOSTIC = "TinyLink: Payload must be trivially copyable."
 
 
 def compiler_command():
+    """Choose CXX when configured, otherwise the first available native compiler."""
     configured = os.environ.get("CXX")
     if configured:
         command = shlex.split(configured, posix=(os.name != "nt"))
@@ -32,6 +33,7 @@ def compiler_command():
 
 
 def compile_probe(compiler, source):
+    """Compile one contract case without linking or producing an executable."""
     return subprocess.run(
         compiler + [
             "-std=c++11",
@@ -48,13 +50,16 @@ def compile_probe(compiler, source):
 
 
 def main():
+    """Require the valid case to compile and the invalid case to fail as intended."""
     try:
         compiler = compiler_command()
+        # The positive probe covers both a trivial payload and the 64-byte limit.
         valid = compile_probe(compiler, ROOT / "test/compile_contract/valid_payload.cpp")
         if valid.returncode != 0:
             sys.stderr.write("Valid payload compile probe failed:\n" + valid.stdout)
             return 1
 
+        # Reject any failure that does not match the one intended static assertion.
         invalid = compile_probe(
             compiler, ROOT / "test/compile_contract/nontrivial_payload.cpp"
         )

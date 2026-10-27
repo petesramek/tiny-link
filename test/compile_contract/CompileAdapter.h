@@ -3,6 +3,13 @@
 
 #include "TinyLink.h"
 
+/**
+ * @struct CompileContractAdapter
+ * @brief Declaration-only adapter used to instantiate TinyLink in compile probes.
+ *
+ * No method definitions are needed: the contract checker uses syntax-only
+ * compilation and verifies the adapter's required interface at compile time.
+ */
 struct CompileContractAdapter {
     bool isOpen();
     int available();

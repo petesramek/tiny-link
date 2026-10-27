@@ -9,6 +9,7 @@
 
 #include <unity.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include "internal/codec/Fletcher16.h"
 
@@ -76,13 +77,16 @@ void test_fletcher16_swapped_bytes(void) {
 
 /** @test Large buffer (> 20 bytes) exercises the chunking reduction path. */
 void test_fletcher16_large_buffer_chunking(void) {
-    static uint8_t data[64];
+    static uint8_t data[64]; // Ascending 0x00..0x3F pattern spans reduction chunks.
     for (size_t i = 0; i < sizeof(data); i++)
         data[i] = (uint8_t)(i & 0xFF);
 
     uint16_t chk = fletcher16(data, sizeof(data));
-    TEST_ASSERT_NOT_EQUAL(0x0000, chk);
-    TEST_ASSERT_NOT_EQUAL(0xFFFF, chk);
+    char diagnostic[112];
+    snprintf(diagnostic, sizeof(diagnostic),
+        "ascending pattern checksum invalid at input length %u",
+        static_cast<unsigned>(sizeof(data)));
+    TEST_ASSERT_TRUE_MESSAGE(chk != 0x0000 && chk != 0xFFFF, diagnostic);
 }
 
 /** @test Checksum is consistent across multiple calls for the same input. */
@@ -103,16 +107,23 @@ void test_fletcher16_consistency(void) {
 void test_fletcher16_native_stress(void) {
     // Verify that the function produces a stable, non-trivial checksum for
     // a large buffer, and that a single-byte change anywhere alters the result.
-    const size_t N = 4096;
+    const size_t N = 4096; // Native-only all-0xA5 baseline.
     std::vector<uint8_t> buf(N, 0xA5);
 
     uint16_t base = fletcher16(buf.data(), N);
-    TEST_ASSERT_NOT_EQUAL(0x0000, base);
+    char diagnostic[128];
+    snprintf(diagnostic, sizeof(diagnostic),
+        "all-0xA5 stress checksum is trivial at input length %u",
+        static_cast<unsigned>(N));
+    TEST_ASSERT_TRUE_MESSAGE(base != 0x0000, diagnostic);
 
     // Mutate one byte in the middle.
     buf[N / 2] ^= 0xFF;
     uint16_t mutated = fletcher16(buf.data(), N);
-    TEST_ASSERT_NOT_EQUAL(base, mutated);
+    snprintf(diagnostic, sizeof(diagnostic),
+        "single-byte mutation at index %u did not change checksum (length %u)",
+        static_cast<unsigned>(N / 2), static_cast<unsigned>(N));
+    TEST_ASSERT_TRUE_MESSAGE(base != mutated, diagnostic);
 }
 
 #endif // TINYLINK_NATIVE_TESTS || TINYLINK_NATIVE_TEST

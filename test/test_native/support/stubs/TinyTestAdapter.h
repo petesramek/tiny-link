@@ -34,8 +34,8 @@ namespace tinylink {
      */
     class TinyTestAdapter {
     protected:
-        std::vector<uint8_t> _buffer;      /**< Internal byte storage for simulation */
-        unsigned long        _fakeMillis;  /**< Manual clock for timeout testing */
+        std::vector<uint8_t> _buffer;      /**< In-memory RX/capture storage. */
+        unsigned long        _fakeMillis;  /**< Manually controlled test clock. */
 
     public:
         /**
@@ -53,6 +53,7 @@ namespace tinylink {
 
         /**
          * @brief Manually sets the internal clock value.
+         * @note Time does not advance unless a test calls this or advanceMillis().
          */
         void setMillis(unsigned long m) { _fakeMillis = m; }
 
@@ -63,6 +64,7 @@ namespace tinylink {
 
         /**
          * @brief Injects raw bytes into the simulated RX buffer.
+         * @note Null input and zero length are ignored; no physical I/O occurs.
          */
         void inject(const uint8_t* data, size_t len) {
             if (!data || len == 0) return;
@@ -76,6 +78,7 @@ namespace tinylink {
 
         /**
          * @brief Simulated status: always returns true by default.
+         * @note Real availability/failure behavior must be supplied by a subclass.
          */
         virtual bool isOpen() { return true; }
 
@@ -97,7 +100,8 @@ namespace tinylink {
 
         /**
          * @brief Virtual write method (override in loopback tests).
-         * Default implementation discards the byte.
+         * Default implementation reports a successful sink; it does not retain
+         * or transmit the byte and does not model hardware timing.
          */
         virtual TinyWriteResult write(uint8_t c) {
             return write(&c, 1);
@@ -105,7 +109,8 @@ namespace tinylink {
 
         /**
          * @brief Virtual write method (override in loopback tests).
-         * Default implementation discards the buffer.
+         * Default implementation reports the full non-null buffer accepted
+         * while discarding it; a null non-empty buffer reports failure.
          */
         virtual TinyWriteResult write(const uint8_t* b, size_t l) {
             if (l == 0) return tiny_write_result(0, 0, true);

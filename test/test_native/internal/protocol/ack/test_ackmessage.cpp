@@ -4,6 +4,7 @@
  */
 
 #include <unity.h>
+#include <stdio.h>
 #include <string.h>
 #include "internal/protocol/AckMessage.h"
 
@@ -93,9 +94,13 @@ void test_ackmessage_all_status_roundtrip(void) {
         TinyAck b;
         memcpy(&b, buf, 2);
 
-        TEST_ASSERT_EQUAL_UINT8(a.seq, b.seq);
-        TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(a.result),
-                                static_cast<uint8_t>(b.result));
+        char diagnostic[96];
+        snprintf(diagnostic, sizeof(diagnostic),
+            "TinyAck status round-trip failed at index %u (status=0x%02X)",
+            static_cast<unsigned>(i), static_cast<unsigned>(codes[i]));
+        TEST_ASSERT_TRUE_MESSAGE(a.seq == b.seq &&
+            static_cast<uint8_t>(a.result) == static_cast<uint8_t>(b.result),
+            diagnostic);
     }
 }
 

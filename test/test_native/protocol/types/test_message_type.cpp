@@ -4,6 +4,7 @@
  */
 
 #include <unity.h>
+#include <stdio.h>
 #include <string.h>
 #include "protocol/MessageType.h"
 
@@ -104,9 +105,13 @@ void test_mt_roundtrip(void) {
     for (size_t i = 0; i < sizeof(types)/sizeof(types[0]); ++i) {
         uint8_t wire = message_type_to_wire(types[i]);
         MessageType back;
-        TEST_ASSERT_TRUE(message_type_from_wire(wire, back));
-        TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(types[i]),
-                                static_cast<uint8_t>(back));
+        char diagnostic[96];
+        snprintf(diagnostic, sizeof(diagnostic),
+            "message type round-trip failed at index %u (wire=0x%02X)",
+            static_cast<unsigned>(i), static_cast<unsigned>(wire));
+        TEST_ASSERT_TRUE_MESSAGE(message_type_from_wire(wire, back) &&
+            static_cast<uint8_t>(types[i]) == static_cast<uint8_t>(back),
+            diagnostic);
     }
 }
 

@@ -1,3 +1,8 @@
+/**
+ * @file test_telemetry.cpp
+ * @brief TinyLink packet-counter saturation behavior.
+ */
+
 #include <unity.h>
 #include <vector>
 #include <stdint.h>

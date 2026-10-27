@@ -9,6 +9,7 @@
 
 #include <unity.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include "internal/codec/CobsCodec.h"
 
@@ -18,17 +19,29 @@ using namespace tinylink::codec;
 // Helpers
 // ---------------------------------------------------------------------------
 
-static void encode_decode_roundtrip(const uint8_t* payload, size_t len) {
-    // Worst-case COBS overhead: +1 per 254 bytes, plus 1 leading byte.
+/**
+ * @brief Encode and decode a payload, checking that its bytes are unchanged.
+ * @param pattern Short description used in deterministic failure diagnostics.
+ *
+ * The static arrays bound this shared helper to 512-byte input/output buffers;
+ * the test vectors below and the native stress case remain within that limit.
+ */
+static void encode_decode_roundtrip(
+    const uint8_t* payload, size_t len, const char* pattern) {
+    // Fixed scratch capacity includes worst-case COBS overhead for test vectors.
     static uint8_t enc[512];
     static uint8_t dec[512];
 
+    char diagnostic[128];
+    snprintf(diagnostic, sizeof(diagnostic),
+        "%s round-trip failed for input length %u",
+        pattern, static_cast<unsigned>(len));
     size_t eLen = cobs_encode(payload, len, enc, sizeof(enc));
-    TEST_ASSERT_GREATER_THAN_size_t(0, eLen);
+    TEST_ASSERT_TRUE_MESSAGE(eLen > 0, diagnostic);
 
     size_t dLen = cobs_decode(enc, eLen, dec, sizeof(dec));
-    TEST_ASSERT_EQUAL_size_t(len, dLen);
-    TEST_ASSERT_EQUAL_MEMORY(payload, dec, len);
+    TEST_ASSERT_TRUE_MESSAGE(dLen == len &&
+        memcmp(payload, dec, len) == 0, diagnostic);
 }
 
 // ---------------------------------------------------------------------------
@@ -38,19 +51,19 @@ static void encode_decode_roundtrip(const uint8_t* payload, size_t len) {
 /** @test Round-trip: small non-zero payload */
 void test_cobs_roundtrip_small(void) {
     static const uint8_t payload[] = { 0x01, 0x02, 0x03, 0x04, 0x05 };
-    encode_decode_roundtrip(payload, sizeof(payload));
+    encode_decode_roundtrip(payload, sizeof(payload), "small nonzero pattern");
 }
 
 /** @test Round-trip: all-zero payload */
 void test_cobs_roundtrip_all_zeros(void) {
     static const uint8_t payload[8] = { 0 };
-    encode_decode_roundtrip(payload, sizeof(payload));
+    encode_decode_roundtrip(payload, sizeof(payload), "all-zero pattern");
 }
 
 /** @test Round-trip: mixed zeros and non-zeros */
 void test_cobs_roundtrip_mixed(void) {
     static const uint8_t payload[] = { 0xAA, 0x00, 0xBB, 0x00, 0xCC };
-    encode_decode_roundtrip(payload, sizeof(payload));
+    encode_decode_roundtrip(payload, sizeof(payload), "mixed zero pattern");
 }
 
 /** @test Encode fails when dst buffer is too small */
@@ -79,12 +92,16 @@ void test_cobs_roundtrip_long_nonzero_run(void) {
     static uint8_t enc[400];
     static uint8_t dec[300];
 
+    char diagnostic[128];
+    snprintf(diagnostic, sizeof(diagnostic),
+        "nonzero 1..255 cycling pattern failed at input length %u",
+        static_cast<unsigned>(sizeof(payload)));
     size_t eLen = cobs_encode(payload, sizeof(payload), enc, sizeof(enc));
-    TEST_ASSERT_GREATER_THAN_size_t(0, eLen);
+    TEST_ASSERT_TRUE_MESSAGE(eLen > 0, diagnostic);
 
     size_t dLen = cobs_decode(enc, eLen, dec, sizeof(dec));
-    TEST_ASSERT_EQUAL_size_t(sizeof(payload), dLen);
-    TEST_ASSERT_EQUAL_MEMORY(payload, dec, sizeof(payload));
+    TEST_ASSERT_TRUE_MESSAGE(dLen == sizeof(payload) &&
+        memcmp(payload, dec, sizeof(payload)) == 0, diagnostic);
 }
 
 /** @test Decode returns 0 for a frame with a zero code byte (invalid) */
@@ -147,7 +164,7 @@ void test_cobs_decode_fail_dst_too_small(void) {
 #include <vector>
 
 void test_cobs_native_stress(void) {
-    const size_t N = 4096;
+    const size_t N = 4096; // Native-only input length; pattern repeats 0x00..0xFF.
     std::vector<uint8_t> payload(N);
     for (size_t i = 0; i < N; i++)
         payload[i] = (uint8_t)(i & 0xFF);
@@ -156,12 +173,16 @@ void test_cobs_native_stress(void) {
     std::vector<uint8_t> enc(N + N / 254 + 2);
     std::vector<uint8_t> dec(N);
 
+    char diagnostic[128];
+    snprintf(diagnostic, sizeof(diagnostic),
+        "native stress pattern 0x00..0xFF failed at input length %u",
+        static_cast<unsigned>(N));
     size_t eLen = cobs_encode(payload.data(), N, enc.data(), enc.size());
-    TEST_ASSERT_GREATER_THAN_size_t(0, eLen);
+    TEST_ASSERT_TRUE_MESSAGE(eLen > 0, diagnostic);
 
     size_t dLen = cobs_decode(enc.data(), eLen, dec.data(), dec.size());
-    TEST_ASSERT_EQUAL_size_t(N, dLen);
-    TEST_ASSERT_EQUAL_MEMORY(payload.data(), dec.data(), N);
+    TEST_ASSERT_TRUE_MESSAGE(dLen == N &&
+        memcmp(payload.data(), dec.data(), N) == 0, diagnostic);
 }
 
 #endif // TINYLINK_NATIVE_TESTS || TINYLINK_NATIVE_TEST

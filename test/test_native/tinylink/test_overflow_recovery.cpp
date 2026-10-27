@@ -1,3 +1,8 @@
+/**
+ * @file test_overflow_recovery.cpp
+ * @brief Recovery and rejection tests for oversized or malformed COBS input.
+ */
+
 #include <unity.h>
 #include <vector>
 #include <stdint.h>
@@ -25,7 +30,8 @@ void test_buffer_overflow_protection(void) {
         link.update();
     }
 
-    TEST_ASSERT_TRUE_MESSAGE(link.available(), "Overflow guard prevented recovery");
+    TEST_ASSERT_TRUE_MESSAGE(link.available(),
+        "No recovery after 300 consecutive 0xFF bytes followed by a valid frame");
 }
 
 /** @test Verifies that packets larger than the compiled struct size are rejected */

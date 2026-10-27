@@ -1,3 +1,8 @@
+/**
+ * @file test_packet.cpp
+ * @brief Packet serialization, checksum rejection, and truncated input tests.
+ */
+
 #include <unity.h>
 #include <stdint.h>
 #include <string.h>

@@ -1,12 +1,16 @@
 #include <cstdint>
 #include "globals.h"
 
-/** @brief Global flag for callback verification */
+/** @brief Shared callback observation; reset by the Unity setUp() fixture. */
 bool g_callbackTriggered = false;
 
-/** @brief Global callback handler */
-void testCallback(const TestPayload& data) { 
-    g_callbackTriggered = true; 
+/**
+ * @brief Record callback invocation without retaining the received payload.
+ * @param data Received payload, intentionally unused by this boolean probe.
+ */
+void testCallback(const TestPayload& data) {
+    (void)data;
+    g_callbackTriggered = true;
 }
 
 LoopbackAdapter adapter;

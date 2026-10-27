@@ -1,4 +1,10 @@
+/**
+ * @file test_ack_sequence.cpp
+ * @brief Sequence increment and uint8_t wrap-around regression tests.
+ */
+
 #include <unity.h>
+#include <stdio.h>
 #include <vector>
 #include <stdint.h>
 #include <cmath>
@@ -37,7 +43,12 @@ void test_sequence_wrap_around(void) {
 
     // 2. Send 256 more packets to complete a full circle
     for(int i = 0; i < 256; i++) {
-        link.sendData(static_cast<uint8_t>(tinylink::MessageType::Data), data);
+        char diagnostic[96];
+        snprintf(diagnostic, sizeof(diagnostic),
+            "sequence-wrap send failed at iteration %d of 256 (payload uptime=1)",
+            i);
+        TEST_ASSERT_TRUE_MESSAGE(link.sendData(
+            static_cast<uint8_t>(tinylink::MessageType::Data), data), diagnostic);
         while(adapter.available() > 0) {
             link.update();
             if(link.available()) link.flush();
@@ -45,7 +56,11 @@ void test_sequence_wrap_around(void) {
     }
 
     // 3. It should have wrapped back to exactly startSeq
-    TEST_ASSERT_EQUAL_UINT8(startSeq, link.seq());
+    char diagnostic[96];
+    snprintf(diagnostic, sizeof(diagnostic),
+        "after 256 sends (sequence range 0..255), expected sequence %u",
+        static_cast<unsigned>(startSeq));
+    TEST_ASSERT_TRUE_MESSAGE(startSeq == link.seq(), diagnostic);
 }
 
 void register_ack_sequence_tests(void) {

@@ -43,7 +43,7 @@ void test_callback_receives_multiple_frames(void) {
     }
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(2, callCount,
-        "Callback must fire for every frame; engine must not stall after first callback");
+        "Expected callbacks for both uptime=42 frames (value=1.5); RX must not stall");
 }
 
 /**
@@ -212,7 +212,7 @@ void test_auto_update_isr_drives_engine(void) {
     }
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, isr_callCount,
-        "autoUpdateISR must drive the engine exactly like update()");
+        "autoUpdateISR must deliver the single uptime=55 frame like update()");
 }
 
 /**
@@ -245,7 +245,7 @@ void test_auto_update_isr_works_without_enable_call(void) {
     }
 
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, noEnable_callCount,
-        "autoUpdateISR must work without calling enableAutoUpdate() first");
+        "Constructor registration must deliver the single uptime=77 frame");
 }
 
 /**
@@ -278,9 +278,9 @@ void test_enable_auto_update_switches_instance(void) {
         tinylink::TinyLink<TestPayload, LoopbackAdapter>::autoUpdateISR();
     }
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, countB,
-        "Default ISR target must be last-constructed instance");
+        "After 10 pump cycles, default ISR target must deliver instB's uptime=1 frame");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, countA,
-        "Non-default instance must not receive ISR-driven updates");
+        "After 10 pump cycles, instA must not receive instB's uptime=1 frame");
 
     // Explicitly switch to instA.
     instA.enableAutoUpdate();
@@ -289,7 +289,7 @@ void test_enable_auto_update_switches_instance(void) {
         tinylink::TinyLink<TestPayload, LoopbackAdapter>::autoUpdateISR();
     }
     TEST_ASSERT_EQUAL_INT_MESSAGE(1, countA,
-        "After enableAutoUpdate(), ISR must drive the newly registered instance");
+        "After 10 pump cycles, enableAutoUpdate() must deliver instA's uptime=1 frame");
 }
 
 void register_callback_tests(void) {

@@ -1,3 +1,8 @@
+/**
+ * @file test_lifecycle.cpp
+ * @brief Frame delimiter handling, resynchronization, and partial-frame reset.
+ */
+
 #include <unity.h>
 #include <vector>
 #include <stdint.h>

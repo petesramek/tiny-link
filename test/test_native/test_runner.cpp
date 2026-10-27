@@ -1,3 +1,8 @@
+/**
+ * @file test_runner.cpp
+ * @brief Unity entry point, suite registration, and shared fixture hooks.
+ */
+
 #include <unity.h>
 #include "support/stubs/globals.h"
 
@@ -28,7 +33,12 @@ void register_write_propagation_tests(void);
 void register_posix_adapter_tests(void);
 #endif
 
-/** @brief Reset the state machine and virtual clock before every test case */
+/**
+ * @brief Restore shared loopback state before each Unity test.
+ *
+ * Clearing RX bytes, virtual time, link state, and the callback flag prevents
+ * one test's injected frames or callback result from influencing another.
+ */
 void setUp(void) {
     link.reset();
     adapter.setMillis(0);
@@ -36,7 +46,10 @@ void setUp(void) {
     g_callbackTriggered = false;
 }
 
-/** @brief Reset state after every test case */
+/**
+ * @brief No post-test cleanup is needed: setUp() fully resets shared state.
+ * @note Tests with local static duplex links reset those instances explicitly.
+ */
 void tearDown(void) {
     // No specific teardown required for this suite
 }

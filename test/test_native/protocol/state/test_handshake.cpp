@@ -15,13 +15,18 @@ using namespace tinylink;
 // Helpers shared across tests in this file
 // ---------------------------------------------------------------------------
 
-// Two cross-wired duplex adapters and their TinyLink instances.
-// Each test that uses duplex communication calls setUpDuplex() first.
+// Shared duplex peers; tests must call setUpDuplex() before using them because
+// their link objects and buffers persist for the lifetime of the test process.
 static TinyDuplexTestAdapter dAdapterA;
 static TinyDuplexTestAdapter dAdapterB;
 static TinyLink<TestPayload, TinyDuplexTestAdapter> linkA(dAdapterA);
 static TinyLink<TestPayload, TinyDuplexTestAdapter> linkB(dAdapterB);
 
+/**
+ * @brief Restore two-peer wiring, virtual clocks, RX buffers, and link state.
+ * @note This helper does not replace the global loopback fixture used by tests
+ *       that exercise a single endpoint.
+ */
 static void setUpDuplex() {
     dAdapterA.connect(dAdapterB);
     dAdapterB.connect(dAdapterA);
@@ -33,7 +38,10 @@ static void setUpDuplex() {
     linkB.reset();
 }
 
-// Run update() on both sides until neither has bytes to process.
+/**
+ * @brief Pump both endpoints until a pass begins with no queued bytes.
+ * @param maxPasses Safety bound against an endlessly active exchange.
+ */
 static void pumpUntilIdle(int maxPasses = 20) {
     for (int i = 0; i < maxPasses; ++i) {
         bool hadWork = (dAdapterA.available() > 0) || (dAdapterB.available() > 0);
@@ -263,8 +271,8 @@ void test_ack_clears_awaiting_ack(void) {
     ack.result = TinyStatus::STATUS_OK;
 
     // Build and inject the ACK frame directly into A's RX buffer.
-    const size_t PLAIN = 3 + sizeof(TinyAck) + 2;
-    const size_t ENC   = PLAIN + 4;
+    const size_t PLAIN = 3 + sizeof(TinyAck) + 2; // Header + ACK payload + FCS.
+    const size_t ENC   = PLAIN + 4; // COBS worst-case overhead for this frame.
     uint8_t pBuf[PLAIN];
     uint8_t rawBuf[ENC];
     size_t plainLen = tinylink::packet::pack(

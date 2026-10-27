@@ -17,6 +17,7 @@
  */
 
 #include <unity.h>
+#include <stdio.h>
 #include "support/stubs/globals.h"
 #include "support/stubs/TinyDuplexTestAdapter.h"
 #include "internal/protocol/AckMessage.h"
@@ -34,6 +35,7 @@ using namespace tinylink;
 static TinyDuplexTestAdapter dA, dB;
 static TinyLink<TestPayload, TinyDuplexTestAdapter> lA(dA), lB(dB);
 
+/** @brief Reconnect both in-memory wires and clear link, buffer, and clock state. */
 static void resetDuplex() {
     dA.connect(dB);
     dB.connect(dA);
@@ -45,6 +47,7 @@ static void resetDuplex() {
     lB.reset();
 }
 
+/** @brief Advance both peers exactly n update cycles for timing-sensitive cases. */
 static void pumpN(int n) {
     for (int i = 0; i < n; ++i) {
         lA.update();
@@ -52,6 +55,11 @@ static void pumpN(int n) {
     }
 }
 
+/**
+ * @brief Pump both peers until a pass starts with no queued bytes or the bound.
+ * @note The pass limit prevents a test helper from spinning forever; callers
+ *       assert the protocol outcome they expect after pumping.
+ */
 static void pumpUntilIdle(int maxPasses = 40) {
     for (int i = 0; i < maxPasses; ++i) {
         bool hadWork = (dA.available() > 0) || (dB.available() > 0);
@@ -61,6 +69,7 @@ static void pumpUntilIdle(int maxPasses = 40) {
     }
 }
 
+/** @brief Start handshake on both endpoints and drain the exchange. */
 static void connectBoth() {
     lA.begin();
     lB.begin();
@@ -71,13 +80,18 @@ static void connectBoth() {
 // Helper: manually inject a raw ACK frame into an adapter's RX buffer.
 // ---------------------------------------------------------------------------
 
+/**
+ * @brief Build and inject one valid ACK without relying on peer auto-ACK logic.
+ * @param into Adapter whose RX buffer receives the delimited encoded frame.
+ * @param seq Sequence echoed in both the ACK payload and packet header.
+ */
 static void injectAck(TinyDuplexTestAdapter& into, uint8_t seq) {
     TinyAck ack;
     ack.seq    = seq;
     ack.result = TinyStatus::STATUS_OK;
 
-    const size_t PLAIN = 3 + sizeof(TinyAck) + 2;
-    const size_t ENC   = PLAIN + 4;
+    const size_t PLAIN = 3 + sizeof(TinyAck) + 2; // Header + ACK + FCS.
+    const size_t ENC   = PLAIN + 4; // COBS worst-case overhead for this short frame.
     uint8_t pBuf[PLAIN];
     uint8_t rawBuf[ENC];
 
@@ -241,8 +255,12 @@ void test_duplex_multi_round_exchange(void) {
         lA.sendData(static_cast<uint8_t>(MessageType::Data), pA);
         pumpUntilIdle();
 
-        TEST_ASSERT_TRUE(lB.available());
-        TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(round * 10), lB.peek().uptime);
+        char diagnostic[112];
+        snprintf(diagnostic, sizeof(diagnostic),
+            "round %d: B missed A payload uptime=%u", round,
+            static_cast<unsigned>(round * 10));
+        TEST_ASSERT_TRUE_MESSAGE(lB.available() &&
+            lB.peek().uptime == static_cast<uint32_t>(round * 10), diagnostic);
         lB.flush();
 
         // B → A
@@ -250,8 +268,11 @@ void test_duplex_multi_round_exchange(void) {
         lB.sendData(static_cast<uint8_t>(MessageType::Data), pB);
         pumpUntilIdle();
 
-        TEST_ASSERT_TRUE(lA.available());
-        TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(round * 100), lA.peek().uptime);
+        snprintf(diagnostic, sizeof(diagnostic),
+            "round %d: A missed B payload uptime=%u", round,
+            static_cast<unsigned>(round * 100));
+        TEST_ASSERT_TRUE_MESSAGE(lA.available() &&
+            lA.peek().uptime == static_cast<uint32_t>(round * 100), diagnostic);
         lA.flush();
     }
 
@@ -286,7 +307,8 @@ void test_duplex_burst_from_b_to_a(void) {
         lB.update();
     }
 
-    TEST_ASSERT_EQUAL_INT_MESSAGE(10, aCount, "All 10 frames from B must reach A");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(10, aCount,
+        "Expected all 10 B->A frames (payload uptime pattern 0..9)");
 }
 
 // ===========================================================================
@@ -308,16 +330,24 @@ void test_duplex_interleaved_burst(void) {
 
     for (int i = 0; i < 5; ++i) {
         TestPayload p = {static_cast<uint32_t>(i), static_cast<float>(i)};
-        lA.sendData(static_cast<uint8_t>(MessageType::Data), p);
-        lB.sendData(static_cast<uint8_t>(MessageType::Data), p);
+        char diagnostic[96];
+        snprintf(diagnostic, sizeof(diagnostic),
+            "interleaved burst send failed at iteration %d of 5 (uptime=%d)",
+            i, i);
+        TEST_ASSERT_TRUE_MESSAGE(lA.sendData(
+            static_cast<uint8_t>(MessageType::Data), p), diagnostic);
+        TEST_ASSERT_TRUE_MESSAGE(lB.sendData(
+            static_cast<uint8_t>(MessageType::Data), p), diagnostic);
         pumpN(4);
     }
 
     // Drain any remaining bytes.
     pumpUntilIdle();
 
-    TEST_ASSERT_EQUAL_INT_MESSAGE(5, aCount, "A must receive all 5 frames from B");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(5, bCount, "B must receive all 5 frames from A");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(5, aCount,
+        "A expected 5 B->A frames (payload uptime pattern 0..4)");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(5, bCount,
+        "B expected 5 A->B frames (payload uptime pattern 0..4)");
 }
 
 // ===========================================================================
@@ -449,8 +479,10 @@ void test_duplex_stats_independent(void) {
         lB.update();
     }
 
-    TEST_ASSERT_EQUAL_UINT32(2, lA.getStats().packets); // A received 2 from B
-    TEST_ASSERT_EQUAL_UINT32(3, lB.getStats().packets); // B received 3 from A
+    TEST_ASSERT_TRUE_MESSAGE(lA.getStats().packets == 2,
+        "A expected 2 received packets after B sent 2 frames");
+    TEST_ASSERT_TRUE_MESSAGE(lB.getStats().packets == 3,
+        "B expected 3 received packets after A sent 3 frames");
     TEST_ASSERT_EQUAL_UINT32(0, lA.getStats().crc);
     TEST_ASSERT_EQUAL_UINT32(0, lB.getStats().crc);
 }
@@ -732,12 +764,18 @@ void test_duplex_sequence_wrap_in_full_duplex(void) {
 
     TestPayload p = {42, 3.14f};
     for (int i = 0; i < 256; ++i) {
-        lA.sendData(static_cast<uint8_t>(MessageType::Data), p);
+        char diagnostic[112];
+        snprintf(diagnostic, sizeof(diagnostic),
+            "duplex send failed at iteration %d of 256 (payload uptime=42)",
+            i);
+        TEST_ASSERT_TRUE_MESSAGE(lA.sendData(
+            static_cast<uint8_t>(MessageType::Data), p), diagnostic);
         pumpN(4);
     }
     pumpUntilIdle();
 
-    TEST_ASSERT_EQUAL_INT_MESSAGE(256, bCount, "All 256 frames must arrive at B");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(256, bCount,
+        "Expected 256 A->B frames (payload uptime=42, sequence range 0..255)");
     TEST_ASSERT_EQUAL_UINT32(0, lB.getStats().crc);
     TEST_ASSERT_EQUAL_UINT8(255, lA.seq()); // seq() returns last-used seq: 256 sends → seqs 0..255 → last = 255
 }
