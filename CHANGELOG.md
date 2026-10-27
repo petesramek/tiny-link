@@ -23,28 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- TinyStats counters now use saturating increments and merges, so engine telemetry cannot wrap.
-- The POSIX adapter now closes its descriptor on termios setup failures and configures raw 8N1
-  without software or supported hardware flow control.
+- Engine telemetry now uses the centralized saturating Stats API, so counters cannot wrap.
 - `sendAck()` now rejects calls until a valid application frame has been received and echoes
-  that frame's sequence even after callbacks, polling consumption, or local transmissions.
+  that frame's sequence after callbacks, polling reads/flushes, or local transmissions; begin,
+  reset, and accepted handshakes invalidate that sequence.
 - TinyLink now checks complete adapter writes for data, ACK, log, and handshake frames.
   `sendData()` and `begin()` report write failure; incomplete data output does not consume
-  a transmit sequence or enter `AWAITING_ACK`, and a failed handshake response does not
+  a transmit sequence or enter the awaiting-ACK state, and a failed handshake response does not
   complete the connection transition.
 
-### Changed
-- Adapter loss observed by `update()` now enters `TinyState::FAILED`, clears partial receive data
-  and pending ACK expectation, and automatically restarts the handshake after transport
-  restoration. `connected()` represents both transport availability and protocol readiness.
-
 ### Added
-- Native Unity tests are organized under `test/test_native/` by production responsibility,
-  with shared adapter stubs isolated under `support/stubs/`.
-- `TelemetryEvent` mapping for centralized TinyStats increments and regression tests for counter
-  saturation and received-sequence ACK validity.
-- POSIX adapter tests for pseudo-terminal configuration and I/O, initialization failures,
-  descriptor ownership, write outcomes, non-copyability, and monotonic timing.
+- Engine saturation and received-sequence ACK regression tests.
 - `src/TinyWriteResult.h`: allocation-free adapter write outcome model, including complete,
   partial, failed, and zero-length results; all built-in transports now report platform writes.
 - Deterministic unit tests for complete, partial, failed, and zero-length adapter write results.
@@ -67,7 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `CITATION.cff` for OSS best practices.
 - Unity-style unit tests: `test_stats`, `test_ackmessage`, `test_ackmessage_more`,
   `test_debugmessage`, `test_debugmessage_edgecases`, `test_message_type`, `test_status_strings`.
-  All registered in `test/test_native/test_runner.cpp`.
+  All registered in `test/test_runner.cpp`.
 
 ### Changed
 - Consumer-defined TinyLink payload types must be trivially copyable before their object
