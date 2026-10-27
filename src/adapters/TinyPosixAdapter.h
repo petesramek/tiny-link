@@ -42,6 +42,14 @@ namespace tinylink {
     private:
         int _fd; /**< File descriptor for the serial port (-1 if not open) */
 
+        void closePort() {
+            if (_fd != -1) {
+                const int fd = _fd;
+                _fd = -1;
+                ::close(fd);
+            }
+        }
+
     public:
         /**
          * @brief Construct a new TinyPosixAdapter.
@@ -52,32 +60,42 @@ namespace tinylink {
             : _fd(-1) {
             if (!port) return;
 
-            _fd = ::open(port, O_RDWR | O_NOCTTY | O_NDELAY);
-            if (_fd != -1) {
-                struct termios opt;
-                if (tcgetattr(_fd, &opt) == 0) {
-                    cfsetispeed(&opt, baud);
-                    cfsetospeed(&opt, baud);
+            _fd = ::open(port, O_RDWR | O_NOCTTY | O_NONBLOCK);
+            if (_fd == -1) return;
 
-                    // Raw mode: no echo, no canonical processing, no signals
-                    opt.c_cflag |= (CLOCAL | CREAD | CS8);
-                    opt.c_lflag &= ~(ICANON | ECHO | ISIG);
-                    opt.c_iflag &= ~(IXON | IXOFF | IXANY); // Disable SW flow control
-                    opt.c_oflag &= ~OPOST;                  // Disable output processing
+            struct termios opt;
+            if (tcgetattr(_fd, &opt) != 0 ||
+                    cfsetispeed(&opt, baud) != 0 ||
+                    cfsetospeed(&opt, baud) != 0) {
+                closePort();
+                return;
+            }
 
-                    tcsetattr(_fd, TCSANOW, &opt);
-                }
+            opt.c_cflag &= ~(CSIZE | PARENB | CSTOPB);
+#ifdef CRTSCTS
+            opt.c_cflag &= ~CRTSCTS;
+#endif
+            opt.c_cflag |= (CLOCAL | CREAD | CS8);
+            opt.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP |
+                INLCR | IGNCR | ICRNL | IXON | IXOFF | IXANY);
+            opt.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+            opt.c_oflag &= ~OPOST;
+            opt.c_cc[VMIN] = 0;
+            opt.c_cc[VTIME] = 0;
+
+            if (tcsetattr(_fd, TCSANOW, &opt) != 0) {
+                closePort();
             }
         }
+
+        TinyPosixAdapter(const TinyPosixAdapter&) = delete;
+        TinyPosixAdapter& operator=(const TinyPosixAdapter&) = delete;
 
         /**
          * @brief Closes the file descriptor upon destruction.
          */
         ~TinyPosixAdapter() {
-            if (_fd != -1) {
-                ::close(_fd);
-                _fd = -1;
-            }
+            closePort();
         }
 
         /**

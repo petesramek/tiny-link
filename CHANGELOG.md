@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - TinyStats counters now use saturating increments and merges, so engine telemetry cannot wrap.
+- The POSIX adapter now closes its descriptor on termios setup failures and configures raw 8N1
+  without software or supported hardware flow control.
 - `sendAck()` now rejects calls until a valid application frame has been received and echoes
   that frame's sequence even after callbacks, polling consumption, or local transmissions.
 - TinyLink now checks complete adapter writes for data, ACK, log, and handshake frames.
@@ -39,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `TelemetryEvent` mapping for centralized TinyStats increments and regression tests for counter
   saturation and received-sequence ACK validity.
+- POSIX adapter tests for pseudo-terminal configuration and I/O, initialization failures,
+  descriptor ownership, write outcomes, non-copyability, and monotonic timing.
 - `src/TinyWriteResult.h`: allocation-free adapter write outcome model, including complete,
   partial, failed, and zero-length results; all built-in transports now report platform writes.
 - Deterministic unit tests for complete, partial, failed, and zero-length adapter write results.

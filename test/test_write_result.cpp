@@ -9,6 +9,10 @@
 
 using namespace tinylink;
 
+/**
+ * @class TinyWriteResultStub
+ * @brief Test double that returns configured complete, partial, or failed writes.
+ */
 class TinyWriteResultStub : public TinyTestAdapter {
 private:
     size_t _acceptedBytes;

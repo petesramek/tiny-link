@@ -17,6 +17,9 @@ void register_handshake_tests(void);
 void register_duplex_tests(void);
 void register_write_result_tests(void);
 void register_write_propagation_tests(void);
+#if !defined(_WIN32)
+void register_posix_adapter_tests(void);
+#endif
 
 /** @brief Reset the state machine and virtual clock before every test case */
 void setUp(void) {
@@ -51,6 +54,9 @@ int main(int argc, char** argv) {
     register_duplex_tests();
     register_write_result_tests();
     register_write_propagation_tests();
+#if !defined(_WIN32)
+    register_posix_adapter_tests();
+#endif
 
     return UNITY_END();
 }
