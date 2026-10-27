@@ -22,6 +22,9 @@ jobs:
       - name: Run Native Unit Tests
         run: pio test -e native
 
+      - name: Check Payload Compile Contracts
+        run: python scripts/check_payload_compile_contract.py
+
   compile_check:
     runs-on: ubuntu-latest
     steps:
@@ -63,4 +66,3 @@ jobs:
           void loop(){ link.update(); }
           EOF
           pio ci --lib="." --board=esp01_1m verify_esp.cpp
-
