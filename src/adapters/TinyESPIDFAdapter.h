@@ -6,8 +6,8 @@
  * the ESP-IDF UART driver. The application remains responsible for the UART
  * driver's configuration and lifetime.
  *
- * The current TinyLink adapter contract does not report write results. Return
- * values from uart_write_bytes() are therefore intentionally ignored.
+ * Write methods return TinyWriteResult using the accepted byte count reported
+ * by uart_write_bytes().
  */
 #ifndef TINYLINK_ADAPTERS_TINYESPIDFADAPTER_H
 #define TINYLINK_ADAPTERS_TINYESPIDFADAPTER_H
@@ -20,6 +20,7 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "../TinyWriteResult.h"
 
 namespace tinylink {
 
@@ -114,49 +115,57 @@ public:
     /**
      * @brief Queue one byte for transmission.
      *
-     * The uart_write_bytes() result is ignored because the current TinyLink
-     * adapter contract does not report partial or failed writes.
+     * The accepted byte count from uart_write_bytes() is returned.
      *
      * @param value Byte to write.
      */
-    inline void write(uint8_t value)
+    inline TinyWriteResult write(uint8_t value)
     {
         if (!isOpen()) {
-            return;
+            return tiny_write_result(1, 0, false);
         }
 
-        uart_write_bytes(
+        const int written = uart_write_bytes(
             _uartPort,
             reinterpret_cast<const char*>(&value),
             1);
+        const bool succeeded = written >= 0;
+        return tiny_write_result(
+            1, succeeded ? static_cast<size_t>(written) : 0, succeeded);
     }
 
     /**
      * @brief Queue a byte sequence for transmission.
      *
-     * The uart_write_bytes() result is ignored because the current TinyLink
-     * adapter contract does not report partial or failed writes. A null data
+     * A zero-length request does not call uart_write_bytes(). A null data
      * pointer is valid only when @p length is zero.
      *
      * @param data Bytes to write, or nullptr when @p length is zero.
      * @param length Number of bytes to write.
      */
-    inline void write(
+    inline TinyWriteResult write(
         const uint8_t* data,
         size_t length)
     {
-        if (!isOpen() || length == 0) {
-            return;
+        if (length == 0) {
+            return tiny_write_result(0, 0, true);
         }
 
         if (!data || length > static_cast<size_t>(INT_MAX)) {
-            return;
+            return tiny_write_result(length, 0, false);
         }
 
-        uart_write_bytes(
+        if (!isOpen()) {
+            return tiny_write_result(length, 0, false);
+        }
+
+        const int written = uart_write_bytes(
             _uartPort,
             reinterpret_cast<const char*>(data),
             length);
+        const bool succeeded = written >= 0;
+        return tiny_write_result(
+            length, succeeded ? static_cast<size_t>(written) : 0, succeeded);
     }
 
     /**

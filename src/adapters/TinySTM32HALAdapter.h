@@ -9,8 +9,8 @@
  * The application must include the correct STM32 family HAL header before this
  * file so UART_HandleTypeDef, HAL UART functions, and UART flags are available.
  *
- * The current TinyLink adapter contract does not report write results. HAL
- * transmit statuses are therefore intentionally ignored.
+ * Write methods return TinyWriteResult; HAL transmit status is reported as an
+ * all-or-error result because HAL exposes no accepted byte count.
  */
 #ifndef TINYLINK_ADAPTERS_TINYSTM32HALADAPTER_H
 #define TINYLINK_ADAPTERS_TINYSTM32HALADAPTER_H
@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "../TinyWriteResult.h"
 
 namespace tinylink {
 
@@ -109,55 +110,53 @@ namespace tinylink {
         /**
          * @brief Transmit one byte using HAL polling.
          *
-         * The call may block for up to ten milliseconds. Its HAL status is ignored
-         * because the current TinyLink adapter contract does not report failures.
+         * The call may block for up to ten milliseconds. HAL status is reported
+         * as complete or failed.
          *
          * @param value Byte to transmit.
          */
-        inline void write(uint8_t value)
+        inline TinyWriteResult write(uint8_t value)
         {
             if (!isOpen()) {
-                return;
+                return tiny_write_result(1, 0, false);
             }
 
-            static_cast<void>(
-                HAL_UART_Transmit(
-                    _uart,
-                    &value,
-                    1,
-                    10));
+            const HAL_StatusTypeDef status = HAL_UART_Transmit(
+                _uart, &value, 1, 10);
+            const bool succeeded = status == HAL_OK;
+            return tiny_write_result(1, succeeded ? 1 : 0, succeeded);
         }
 
         /**
          * @brief Transmit a byte sequence using HAL polling.
          *
-         * The call may block for up to 100 milliseconds. Its HAL status is ignored
-         * because the current TinyLink adapter contract does not report failures.
+         * The call may block for up to 100 milliseconds. HAL status is reported
+         * as complete or failed because no accepted byte count is available.
          * STM32 HAL accepts a 16-bit transfer length, so larger requests are
-         * rejected rather than truncated. A null pointer is valid only when
-         * @p length is zero.
+         * rejected rather than truncated. A zero-length request does not call
+         * HAL. A null pointer is valid only when @p length is zero.
          *
          * @param data Bytes to transmit, or nullptr when @p length is zero.
          * @param length Number of bytes to transmit.
          */
-        inline void write(
+        inline TinyWriteResult write(
             const uint8_t* data,
             size_t length)
         {
-            if (!isOpen() || length == 0) {
-                return;
+            if (length == 0) {
+                return tiny_write_result(0, 0, true);
             }
 
-            if (!data || length > UINT16_MAX) {
-                return;
+            if (!isOpen() || !data || length > UINT16_MAX) {
+                return tiny_write_result(length, 0, false);
             }
 
-            static_cast<void>(
-                HAL_UART_Transmit(
-                    _uart,
-                    const_cast<uint8_t*>(data),
-                    static_cast<uint16_t>(length),
-                    100));
+            const HAL_StatusTypeDef status = HAL_UART_Transmit(
+                _uart, const_cast<uint8_t*>(data),
+                static_cast<uint16_t>(length), 100);
+            const bool succeeded = status == HAL_OK;
+            return tiny_write_result(
+                length, succeeded ? length : 0, succeeded);
         }
 
         /**

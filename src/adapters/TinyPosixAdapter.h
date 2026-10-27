@@ -6,9 +6,8 @@
  * descriptor. Construction leaves the adapter closed when any required setup
  * step fails.
  *
- * The current TinyLink adapter contract does not report write results. Partial
- * writes and write errors reported by POSIX write() are therefore intentionally
- * not exposed to TinyLink.
+ * Write methods return TinyWriteResult with the byte count reported by POSIX
+ * write().
  */
 #ifndef TINYLINK_ADAPTERS_TINYPOSIXADAPTER_H
 #define TINYLINK_ADAPTERS_TINYPOSIXADAPTER_H
@@ -26,6 +25,7 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+#include "../TinyWriteResult.h"
 
 namespace tinylink {
 
@@ -164,46 +164,54 @@ public:
     /**
      * @brief Write one byte to the serial device.
      *
-     * The POSIX write() result is ignored because the current TinyLink adapter
-     * contract does not report partial or failed writes.
+     * The accepted byte count from POSIX write() is returned.
      *
      * @param value Byte to write.
      */
-    inline void write(uint8_t value)
+    inline TinyWriteResult write(uint8_t value)
     {
         if (!isOpen()) {
-            return;
+            return tiny_write_result(1, 0, false);
         }
 
-        static_cast<void>(::write(
+        const ssize_t written = ::write(
             _fileDescriptor,
             &value,
-            1));
+            1);
+        const bool succeeded = written >= 0;
+        return tiny_write_result(
+            1, succeeded ? static_cast<size_t>(written) : 0, succeeded);
     }
 
     /**
      * @brief Write a byte sequence to the serial device.
      *
-     * The POSIX write() result is ignored because the current TinyLink adapter
-     * contract does not report partial or failed writes. Because the descriptor
-     * is non-blocking, callers must not assume the whole buffer was accepted.
-     * A null pointer is valid only when @p length is zero.
+     * Because the descriptor is non-blocking, a partial result is possible.
+     * A zero-length request does not call POSIX write(). A null pointer is
+     * valid only when @p length is zero.
      *
      * @param data Bytes to write, or nullptr when @p length is zero.
      * @param length Number of bytes to write.
      */
-    inline void write(
+    inline TinyWriteResult write(
         const uint8_t* data,
         size_t length)
     {
-        if (!isOpen() || length == 0 || !data) {
-            return;
+        if (length == 0) {
+            return tiny_write_result(0, 0, true);
         }
 
-        static_cast<void>(::write(
+        if (!isOpen() || !data) {
+            return tiny_write_result(length, 0, false);
+        }
+
+        const ssize_t written = ::write(
             _fileDescriptor,
             data,
-            length));
+            length);
+        const bool succeeded = written >= 0;
+        return tiny_write_result(
+            length, succeeded ? static_cast<size_t>(written) : 0, succeeded);
     }
 
     /**
