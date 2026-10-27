@@ -27,6 +27,7 @@
 #include "internal/protocol/AckMessage.h"
 #include "internal/protocol/HandshakeMessage.h"
 #include "internal/protocol/LogMessage.h"
+#include "TinyWriteResult.h"
 #include "protocol/AckResult.h"
 #include "protocol/LogLevel.h"
 #include "protocol/MessageType.h"
@@ -45,9 +46,11 @@ private:
         static_cast<void>(static_cast<bool>(std::declval<Candidate>().isOpen())),
         static_cast<void>(static_cast<int>(std::declval<Candidate>().available())),
         static_cast<void>(static_cast<int>(std::declval<Candidate>().read())),
-        static_cast<void>(std::declval<Candidate>().write(uint8_t(0))),
-        static_cast<void>(std::declval<Candidate>().write(
-            static_cast<const uint8_t*>(nullptr), size_t(0))),
+        static_cast<void>(static_cast<TinyWriteResult>(
+            std::declval<Candidate>().write(uint8_t(0)))),
+        static_cast<void>(static_cast<TinyWriteResult>(
+            std::declval<Candidate>().write(
+                static_cast<const uint8_t*>(nullptr), size_t(0)))),
         static_cast<void>(static_cast<unsigned long>(
             std::declval<Candidate>().millis())),
         std::true_type());
@@ -142,7 +145,7 @@ private:
             return false;
         }
 
-        uint8_t encoded[MAX_ENCODED_SIZE] = {};
+        uint8_t encoded[MAX_ENCODED_SIZE + 1u] = {};
         const codec::CobsResult cobs = codec::cobs_encode(
             plain, packed.length, encoded, sizeof(encoded));
 
@@ -151,9 +154,11 @@ private:
             return false;
         }
 
-        _adapter->write(encoded, cobs.bytesWritten);
-        _adapter->write(uint8_t(0));
-        return true;
+        encoded[cobs.bytesWritten] = 0;
+        const size_t frameLength = cobs.bytesWritten + 1u;
+        const TinyWriteResult written = _adapter->write(encoded, frameLength);
+        return written.status == TinyWriteStatus::Complete &&
+            written.bytesWritten == frameLength;
     }
 
     /** @brief Send a handshake request or response. */
@@ -247,8 +252,9 @@ private:
         }
 
         if (message.kind == HandshakeKind::Request) {
-            _connectionState = ConnectionState::Connected;
-            send_handshake(HandshakeKind::Response);
+            if (send_handshake(HandshakeKind::Response)) {
+                _connectionState = ConnectionState::Connected;
+            }
         } else if (_connectionState == ConnectionState::Connecting) {
             _connectionState = ConnectionState::Connected;
         }
@@ -423,12 +429,16 @@ public:
     /** @brief Set receive and acknowledgement timeout in milliseconds. */
     void setTimeout(unsigned long milliseconds) { _timeout = milliseconds; }
 
-    /** @brief Start protocol-version handshake negotiation. */
-    void begin()
+    /**
+     * @brief Start protocol-version handshake negotiation.
+     * @return True if the complete request frame was accepted by the adapter.
+     *         False if the transport is closed or output was incomplete.
+     */
+    bool begin()
     {
         _handshakeEnabled = true;
         _connectionState = ConnectionState::Connecting;
-        send_handshake(HandshakeKind::Request);
+        return send_handshake(HandshakeKind::Request);
     }
 
     /** @brief Reset all runtime protocol state while preserving callbacks and timeout. */
@@ -516,6 +526,10 @@ public:
     /**
      * @brief Send one application payload and await its correlated ACK.
      *
+     * Incomplete frames are not resumed. A failed or partial write returns
+     * false without consuming a transmit sequence or entering AwaitingAck.
+     * Resynchronize the transport before attempting another frame.
+     *
      * Reserved internal message-type bytes are rejected. The object bytes are
      * sent unchanged and therefore require an application-defined portability
      * contract when peers use different platforms or ABIs.
@@ -526,7 +540,7 @@ public:
             return false;
         }
 
-        const uint8_t sequence = _nextTransmitSequence++;
+        const uint8_t sequence = _nextTransmitSequence;
         if (!write_frame(
                 type,
                 sequence,
@@ -535,6 +549,7 @@ public:
             return false;
         }
 
+        _nextTransmitSequence = static_cast<uint8_t>(sequence + 1u);
         _pendingTransmitSequence = sequence;
         _lastTransmit = _adapter->millis();
         _transmitState = TransmitState::AwaitingAck;
@@ -557,7 +572,11 @@ public:
             sizeof(payload));
     }
 
-    /** @brief Send an explicitly encoded structured log frame. */
+    /**
+     * @brief Send an explicitly encoded structured log frame.
+     *
+     * A failed or partial write does not consume a transmit sequence.
+     */
     bool sendLog(LogLevel level, uint16_t code, const char* text)
     {
         LogMessage message = {};
@@ -573,11 +592,17 @@ public:
             return false;
         }
 
-        return write_frame(
+        const uint8_t sequence = _nextTransmitSequence;
+        if (!write_frame(
             message_type_to_wire(MessageType::Log),
-            _nextTransmitSequence++,
+            sequence,
             payload,
-            sizeof(payload));
+            sizeof(payload))) {
+            return false;
+        }
+
+        _nextTransmitSequence = static_cast<uint8_t>(sequence + 1u);
+        return true;
     }
 };
 

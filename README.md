@@ -30,6 +30,13 @@ partial results preserve the number of bytes accepted. Existing calls that ignor
 value continue to compile, while custom adapters and overrides must update their write methods'
 return type.
 
+TinyLink send methods report whether the complete delimited frame was accepted. Incomplete writes
+are not resumed: `sendData()` returns false without consuming its sequence or entering
+the awaiting-ACK state, and `begin()` returns false while remaining in `Connecting` so the
+handshake can retry. Because bytes from a partial frame may already be on the wire, do not retry
+on that stream until it is synchronized again: recover/reopen and flush the transport endpoints, or let the
+receiver's inter-byte timeout discard the incomplete frame before sending another one.
+
 ---
 
 ## 🛠 Installation
