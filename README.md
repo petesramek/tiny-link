@@ -277,6 +277,23 @@ writes. Applications implementing a custom adapter must return this result
 from both the single-byte and buffer `write()` overloads, and must not treat a
 partial frame as complete.
 
+## Connection lifecycle and transport loss
+
+`update()` detects a closed adapter and moves the link to
+`ConnectionState::Failed`. The link clears any partial receive frame, pending
+outgoing ACK expectation, and received-sequence ACK eligibility. It does not
+retransmit an application frame that was already sent or reset the next
+transmit sequence. An application payload already delivered to polling code
+remains available to `read()` or `flush()`.
+
+When the adapter is open again, a link started with `begin()` returns to
+`ConnectionState::Connecting` and sends a fresh handshake request; the existing
+handshake retry interval applies if the request cannot be written or the peer
+does not respond. A link that was synchronized by a peer handshake without
+calling `begin()` returns to `ConnectionState::Inactive` and waits for a new
+peer handshake request (or an application call to `begin()`). Transport loss
+is recoverable; monitor `connectionState()` or `connected()` to observe it.
+
 ## 📂 Project Structure
 
 `src/`: Core protocol logic (`TinyLink.h`, `TinyProtocol.h`).

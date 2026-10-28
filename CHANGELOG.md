@@ -65,7 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not enter `AwaitingAck` or consume a transmit sequence. A received handshake request connects
   only after its response was written. A partial body or failed delimiter leaves an unterminated
   fragment; it is not resumed, and the next write first emits a recovery delimiter so the peer
-  discards the fragment. A frame whose delimiter failed may still be delivered by the peer.- `src/TinyProtocol.h` is now a lightweight umbrella header that re-exports all focused
+  discards the fragment. A frame whose delimiter failed may still be delivered by the peer.
+- Adapter closure detected by `update()` moves the link to `ConnectionState::Failed`, clears
+  partial receive and pending ACK state, and preserves delivered polling data and the next
+  transmit sequence. Reopening restarts handshake negotiation for links started with `begin()`;
+  peer-synchronized links return to `Inactive` and await fresh synchronization.
+- `src/TinyProtocol.h` is now a lightweight umbrella header that re-exports all focused
   `src/protocol/*.h` headers. Existing `#include "TinyProtocol.h"` continues to work unchanged.
 - `TinyStatus` expanded with granular ACK codes (ERR_OVERFLOW, ERR_BUSY, ERR_PROCESSING,
   ERR_UNKNOWN) and moved to `src/protocol/Status.h`.  Wire values for ERR_CRC (0x01) and

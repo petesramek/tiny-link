@@ -22,11 +22,11 @@ namespace tinylink {
      * lifecycle state.
      */
     enum class ConnectionState : uint8_t {
-        Inactive = 0,     /**< The link has not started or has been reset. */
+        Inactive = 0,     /**< Not started, reset, or awaiting synchronization after recovery. */
         Connecting = 1,   /**< Handshake negotiation is in progress. */
         Connected = 2,    /**< A compatible peer connection is established. */
         Incompatible = 3, /**< The peer uses an unsupported protocol version. */
-        Failed = 4        /**< Connection establishment or transport operation failed. */
+        Failed = 4        /**< The adapter is unavailable or connection establishment failed. */
     };
 
     static_assert(sizeof(ConnectionState) == 1,
