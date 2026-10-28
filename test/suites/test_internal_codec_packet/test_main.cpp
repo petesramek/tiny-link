@@ -4,8 +4,11 @@
 #include <unity.h>
 
 #include "internal/codec/Packet.h"
+#include "support/tinylink/TestDiagnostics.h"
 
 namespace {
+
+    using tinylink_test::diag;
 
     void testPacketSizeCoversEmptyMaximumAndTooLarge()
     {
@@ -57,16 +60,21 @@ namespace {
 
         for (size_t length = 0; length <= sizeof(payload); ++length) {
             const uint8_t* input = length == 0 ? nullptr : payload;
+            const char* context = diag(
+                "packet payload length=%u of max %u",
+                (unsigned)length, (unsigned)sizeof(payload));
             const tinylink::packet::PacketResult packed =
                 tinylink::packet::pack(
                     0xF2u, 0xD6u, input, length, packet, sizeof(packet));
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::packet::PacketStatus::Success),
-                static_cast<int>(packed.status));
-            TEST_ASSERT_EQUAL_UINT32(
+                static_cast<int>(packed.status),
+                context);
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(
                 tinylink::packet::PACKET_HEADER_SIZE +
                     length + tinylink::packet::PACKET_CHECKSUM_SIZE,
-                packed.length);
+                packed.length,
+                context);
 
             uint8_t type = 0;
             uint8_t sequence = 0;
@@ -75,14 +83,15 @@ namespace {
                 tinylink::packet::unpack(
                     packet, packed.length, &type, &sequence,
                     decoded, sizeof(decoded), &decodedLength);
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::packet::PacketStatus::Success),
-                static_cast<int>(unpacked.status));
-            TEST_ASSERT_EQUAL_UINT8(0xF2u, type);
-            TEST_ASSERT_EQUAL_UINT8(0xD6u, sequence);
-            TEST_ASSERT_EQUAL_UINT32(length, decodedLength);
+                static_cast<int>(unpacked.status),
+                context);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(0xF2u, type, context);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(0xD6u, sequence, context);
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(length, decodedLength, context);
             if (length > 0) {
-                TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, decoded, length);
+                TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(payload, decoded, length, context);
             }
         }
     }
@@ -272,11 +281,14 @@ namespace {
             uint8_t corrupted[tinylink::packet::PACKET_MAX_SIZE] = {};
             memcpy(corrupted, packet, packed.length);
             corrupted[protectedByteOffsets[i]] ^= 0x01u;
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::packet::PacketStatus::ChecksumMismatch),
                 static_cast<int>(tinylink::packet::unpack(
                     corrupted, packed.length, nullptr, nullptr,
-                    nullptr, 0, nullptr).status));
+                    nullptr, 0, nullptr).status),
+                tinylink_test::diag(
+                    "flipped bit 0 of protected byte offset=%u in %u-byte packet",
+                    (unsigned)protectedByteOffsets[i], (unsigned)packed.length));
         }
 
         uint8_t corruptedChecksum[tinylink::packet::PACKET_MAX_SIZE] = {};

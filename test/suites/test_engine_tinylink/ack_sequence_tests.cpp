@@ -55,17 +55,22 @@ void testApplicationSequenceNumbersWrapAfterAllByteValues()
         const Payload payload = payloadWith(0x10);
 
         for (uint16_t value = 0; value <= 0xFFu; ++value) {
-            TEST_ASSERT_TRUE(link.sendData(0x22, payload));
+            const char* context = tinylink_test::diag(
+                "sequence wrap iteration=%u (expected sequence 0x%02X)",
+                (unsigned)value, (unsigned)(value & 0xFFu));
+            TEST_ASSERT_TRUE_MESSAGE(link.sendData(0x22, payload), context);
             const size_t frame = tinylink_test::writtenFrameCount(adapter) - 1;
             uint8_t type = 0;
             uint8_t sequence = 0;
             uint8_t bytes[sizeof(Payload)] = {};
             size_t length = 0;
-            TEST_ASSERT_TRUE(tinylink_test::decodeWrittenFrame(
-                adapter, frame, type, sequence, bytes, sizeof(bytes), length));
-            TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(value), sequence);
-            TEST_ASSERT_TRUE(tinylink_test::queueAck(
-                adapter, sequence, tinylink::AckResult::Ok));
+            TEST_ASSERT_TRUE_MESSAGE(tinylink_test::decodeWrittenFrame(
+                adapter, frame, type, sequence, bytes, sizeof(bytes), length),
+                context);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                static_cast<uint8_t>(value), sequence, context);
+            TEST_ASSERT_TRUE_MESSAGE(tinylink_test::queueAck(
+                adapter, sequence, tinylink::AckResult::Ok), context);
             link.update();
         }
 

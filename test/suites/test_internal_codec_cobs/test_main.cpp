@@ -4,8 +4,11 @@
 #include <unity.h>
 
 #include "internal/codec/CobsCodec.h"
+#include "support/tinylink/TestDiagnostics.h"
 
 namespace {
+
+    using tinylink_test::diag;
 
     void testEncodedSizeIncludesExactBlockOverhead()
     {
@@ -14,11 +17,14 @@ namespace {
 
         for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
             size_t required = 999;
-            TEST_ASSERT_EQUAL(
+            const char* context = diag(
+                "plain length=%u index=%u", (unsigned)lengths[i], (unsigned)i);
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::codec::CobsStatus::Success),
                 static_cast<int>(tinylink::codec::cobs_encoded_size(
-                    lengths[i], required)));
-            TEST_ASSERT_EQUAL_UINT32(expected[i], required);
+                    lengths[i], required)),
+                context);
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(expected[i], required, context);
         }
     }
 
@@ -90,32 +96,38 @@ namespace {
 
         for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
             const size_t length = lengths[i];
+            const char* context = diag(
+                "nonzero run length=%u index=%u", (unsigned)length, (unsigned)i);
             size_t required = 0;
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::codec::CobsStatus::Success),
                 static_cast<int>(tinylink::codec::cobs_encoded_size(
-                    length, required)));
+                    length, required)),
+                context);
             const tinylink::codec::CobsResult encodedResult =
                 tinylink::codec::cobs_encode(
                     source, length, encoded, required);
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::codec::CobsStatus::Success),
-                static_cast<int>(encodedResult.status));
-            TEST_ASSERT_EQUAL_UINT32(required, encodedResult.bytesWritten);
-            TEST_ASSERT_EQUAL_UINT8(
+                static_cast<int>(encodedResult.status),
+                context);
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(required, encodedResult.bytesWritten, context);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
                 length < 254u
                     ? static_cast<uint8_t>(length + 1u)
                     : 0xFFu,
-                encoded[0]);
+                encoded[0],
+                context);
 
             const tinylink::codec::CobsResult decodedResult =
                 tinylink::codec::cobs_decode(
                     encoded, encodedResult.bytesWritten, decoded, length);
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::codec::CobsStatus::Success),
-                static_cast<int>(decodedResult.status));
-            TEST_ASSERT_EQUAL_UINT32(length, decodedResult.bytesWritten);
-            TEST_ASSERT_EQUAL_UINT8_ARRAY(source, decoded, length);
+                static_cast<int>(decodedResult.status),
+                context);
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(length, decodedResult.bytesWritten, context);
+            TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(source, decoded, length, context);
         }
     }
 
@@ -207,31 +219,37 @@ namespace {
         }
 
         for (size_t length = 0; length <= sizeof(source); ++length) {
+            const char* context = diag(
+                "deterministic pattern plain length=%u of %u",
+                (unsigned)length, (unsigned)sizeof(source));
             const tinylink::codec::CobsResult enc =
                 tinylink::codec::cobs_encode(
                     length == 0 ? nullptr : source,
                     length,
                     encoded,
                     sizeof(encoded));
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::codec::CobsStatus::Success),
-                static_cast<int>(enc.status));
+                static_cast<int>(enc.status),
+                context);
             size_t measured = 0;
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::codec::CobsStatus::Success),
                 static_cast<int>(tinylink::codec::cobs_decoded_size(
-                    encoded, enc.bytesWritten, measured)));
-            TEST_ASSERT_EQUAL_UINT32(length, measured);
+                    encoded, enc.bytesWritten, measured)),
+                context);
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(length, measured, context);
             const tinylink::codec::CobsResult dec =
                 tinylink::codec::cobs_decode(
                     encoded, enc.bytesWritten,
                     length == 0 ? nullptr : decoded, sizeof(decoded));
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::codec::CobsStatus::Success),
-                static_cast<int>(dec.status));
-            TEST_ASSERT_EQUAL_UINT32(length, dec.bytesWritten);
+                static_cast<int>(dec.status),
+                context);
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(length, dec.bytesWritten, context);
             if (length > 0) {
-                TEST_ASSERT_EQUAL_UINT8_ARRAY(source, decoded, length);
+                TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(source, decoded, length, context);
             }
         }
     }

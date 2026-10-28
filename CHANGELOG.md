@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Native tests now build with `-std=c++11 -Wall -Wextra -Werror -pedantic` (no warnings needed fixing),
+  the unnecessary `test_build_src` setting was removed, and a `native_sanitized` (ASan + UBSan)
+  environment runs in Linux CI. Sanitizers could not be linked on the Windows/Clang host (missing
+  runtimes), so that job is verified by CI only; AVR/ESP8266 builds were not run locally.
+- Documented the native test infrastructure (`test/README.md`, fake adapter, helpers, platform
+  stubs, compile-contract probes, capacity assumptions) and made loop-based assertions report the
+  failing index, length, or value via `TEST_ASSERT_*_MESSAGE` and the new `diag()` helper
+  (`test/support/tinylink/TestDiagnostics.h`). No production or coverage changes.
 - Reorganized native test suites under `test/suites` by adapter, engine, protocol, and codec
   responsibility (`test_dir` in `platformio.ini`). The TinyLink suite is split into lifecycle,
   application, ACK/sequence, receive/mailbox, timeout, overflow/recovery, logging, and telemetry

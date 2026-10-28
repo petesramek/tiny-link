@@ -5,9 +5,22 @@
 #include <stdint.h>
 
 #include "FakeAdapter.h"
+#include "TestDiagnostics.h"
 #include "TinyLink.h"
 
 namespace tinylink_test {
+
+    /*
+     * Frame helpers built on the production COBS and packet codecs (not
+     * reimplementations), so test frames stay valid if the wire format changes.
+     * A "frame" is COBS(packet) followed by a 0x00 delimiter. Encode buffers
+     * are sized PACKET_MAX_SIZE (69) plus COBS overhead.
+     *
+     * queue*: append a frame to the adapter's inbound bytes; return false if
+     * encoding fails or the 8192-byte input buffer is full.
+     * writtenFrameCount/decodeWrittenFrame: split the adapter's output on 0x00
+     * delimiters and decode the Nth frame back to type/sequence/payload.
+     */
 
     inline bool queueFrame(
         FakeAdapter& adapter,

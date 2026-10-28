@@ -4,6 +4,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Test-only STM32 HAL stand-in covering just the UART calls TinySTM32HALAdapter
+ * uses. Behavior is scripted through file-scope `tinylinkHal*` variables
+ * (receive readiness/status/value, transmit status) with call counters and
+ * recorded timeouts for assertions. Variables are not reset automatically.
+ */
+
 typedef int HAL_StatusTypeDef;
 typedef uint32_t HAL_TickTypeDef;
 

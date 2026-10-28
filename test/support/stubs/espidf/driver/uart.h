@@ -4,6 +4,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Test-only ESP-IDF UART stand-in. Not the real driver: state lives in
+ * file-scope `tinylinkEsp*` variables that tests set directly to script driver
+ * results (buffered size, read result, write result) and to inspect the last
+ * write (capped at 64 bytes, the TinyLink maximum payload). Tests must reset
+ * these between cases; they are not reset automatically.
+ */
+
 typedef int uart_port_t;
 typedef int esp_err_t;
 

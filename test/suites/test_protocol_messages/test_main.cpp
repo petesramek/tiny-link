@@ -11,6 +11,7 @@
 #include "protocol/LogLevel.h"
 #include "protocol/MessageType.h"
 #include "protocol/State.h"
+#include "support/tinylink/TestDiagnostics.h"
 
 namespace {
 
@@ -26,10 +27,17 @@ namespace {
 
         for (size_t i = 0; i < 3; ++i) {
             tinylink::AckResult decoded = tinylink::AckResult::Busy;
-            TEST_ASSERT_EQUAL_UINT8(wire[i], tinylink::ack_result_to_wire(results[i]));
-            TEST_ASSERT_TRUE(tinylink::ack_result_from_wire(wire[i], decoded));
-            TEST_ASSERT_EQUAL(static_cast<int>(results[i]), static_cast<int>(decoded));
-            TEST_ASSERT_EQUAL_STRING(names[i], tinylink::ack_result_to_string(results[i]));
+            const char* context = tinylink_test::diag(
+                "ack result=%s wire=0x%02X index=%u",
+                names[i], (unsigned)wire[i], (unsigned)i);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                wire[i], tinylink::ack_result_to_wire(results[i]), context);
+            TEST_ASSERT_TRUE_MESSAGE(
+                tinylink::ack_result_from_wire(wire[i], decoded), context);
+            TEST_ASSERT_EQUAL_MESSAGE(
+                static_cast<int>(results[i]), static_cast<int>(decoded), context);
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(
+                names[i], tinylink::ack_result_to_string(results[i]), context);
         }
 
         tinylink::AckResult unchanged = tinylink::AckResult::Busy;
@@ -53,18 +61,23 @@ namespace {
 
         for (size_t i = 0; i < 3; ++i) {
             uint8_t output[tinylink::ACK_MESSAGE_WIRE_SIZE] = { 0xA5u };
-            TEST_ASSERT_EQUAL(
+            const char* context = tinylink_test::diag(
+                "ack round trip wire=0x%02X index=%u", (unsigned)wire[i], (unsigned)i);
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::AckMessageCodecStatus::Success),
                 static_cast<int>(tinylink::encode_ack_message(
-                    results[i], output, sizeof(output))));
-            TEST_ASSERT_EQUAL_UINT8(wire[i], output[0]);
+                    results[i], output, sizeof(output))),
+                context);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(wire[i], output[0], context);
 
             tinylink::AckResult decoded = tinylink::AckResult::Unknown;
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::AckMessageCodecStatus::Success),
                 static_cast<int>(tinylink::decode_ack_message(
-                    output, sizeof(output), decoded)));
-            TEST_ASSERT_EQUAL(static_cast<int>(results[i]), static_cast<int>(decoded));
+                    output, sizeof(output), decoded)),
+                context);
+            TEST_ASSERT_EQUAL_MESSAGE(
+                static_cast<int>(results[i]), static_cast<int>(decoded), context);
         }
     }
 
@@ -141,22 +154,30 @@ namespace {
             const tinylink::HandshakeMessage source = {
                 kinds[i], TINYLINK_PROTOCOL_VERSION
             };
+            const char* context = tinylink_test::diag(
+                "handshake kind=%u index=%u",
+                (unsigned)static_cast<uint8_t>(kinds[i]), (unsigned)i);
             uint8_t output[tinylink::HANDSHAKE_MESSAGE_WIRE_SIZE] = { 0xA5u, 0xA6u };
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::HandshakeMessageCodecStatus::Success),
                 static_cast<int>(tinylink::encode_handshake_message(
-                    source, output, sizeof(output))));
-            TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(kinds[i]), output[0]);
-            TEST_ASSERT_EQUAL_UINT8(TINYLINK_PROTOCOL_VERSION, output[1]);
+                    source, output, sizeof(output))),
+                context);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                static_cast<uint8_t>(kinds[i]), output[0], context);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                TINYLINK_PROTOCOL_VERSION, output[1], context);
 
             tinylink::HandshakeMessage decoded = {};
-            TEST_ASSERT_EQUAL(
+            TEST_ASSERT_EQUAL_MESSAGE(
                 static_cast<int>(tinylink::HandshakeMessageCodecStatus::Success),
                 static_cast<int>(tinylink::decode_handshake_message(
-                    output, sizeof(output), decoded)));
-            TEST_ASSERT_EQUAL(
-                static_cast<int>(source.kind), static_cast<int>(decoded.kind));
-            TEST_ASSERT_EQUAL_UINT8(source.protocolVersion, decoded.protocolVersion);
+                    output, sizeof(output), decoded)),
+                context);
+            TEST_ASSERT_EQUAL_MESSAGE(
+                static_cast<int>(source.kind), static_cast<int>(decoded.kind), context);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                source.protocolVersion, decoded.protocolVersion, context);
         }
     }
 
@@ -222,7 +243,10 @@ namespace {
         tinylink::set_log_message_text(message, nullptr);
         TEST_ASSERT_EQUAL_STRING("", message.text);
         for (size_t i = 0; i < sizeof(message.text); ++i) {
-            TEST_ASSERT_EQUAL_UINT8(0, message.text[i]);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                0, message.text[i],
+                tinylink_test::diag("text byte not cleared at offset=%u of %u",
+                    (unsigned)i, (unsigned)sizeof(message.text)));
         }
 
         tinylink::set_log_message_text(message, "short");
@@ -260,7 +284,10 @@ namespace {
         };
         TEST_ASSERT_EQUAL_UINT8_ARRAY(expectedPrefix, output, sizeof(expectedPrefix));
         for (size_t i = 12; i < sizeof(output); ++i) {
-            TEST_ASSERT_EQUAL_UINT8(0, output[i]);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                0, output[i],
+                tinylink_test::diag("log padding byte nonzero at wire offset=%u of %u",
+                    (unsigned)i, (unsigned)sizeof(output)));
         }
 
         tinylink::LogMessage decoded = {};
@@ -304,7 +331,10 @@ namespace {
             static_cast<int>(tinylink::LogMessageCodecStatus::UnterminatedText),
             static_cast<int>(tinylink::encode_log_message(message, output, sizeof(output))));
         for (size_t i = 0; i < sizeof(output); ++i) {
-            TEST_ASSERT_EQUAL_UINT8(0xA5u, output[i]);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                0xA5u, output[i],
+                tinylink_test::diag("output mutated after failed encode at offset=%u of %u",
+                    (unsigned)i, (unsigned)sizeof(output)));
         }
 
         uint8_t invalid[tinylink::LOG_MESSAGE_WIRE_SIZE] = {};
@@ -351,16 +381,23 @@ namespace {
 
         for (uint8_t i = 0; i < 5; ++i) {
             tinylink::LogLevel decoded = tinylink::LogLevel::ERROR;
-            TEST_ASSERT_TRUE(tinylink::is_valid_log_level(i));
-            TEST_ASSERT_TRUE(tinylink::is_valid_log_level(levels[i]));
-            TEST_ASSERT_EQUAL_UINT8(i, tinylink::log_level_to_wire(levels[i]));
-            TEST_ASSERT_TRUE(tinylink::log_level_from_wire(i, decoded));
-            TEST_ASSERT_EQUAL(static_cast<int>(levels[i]), static_cast<int>(decoded));
-            TEST_ASSERT_EQUAL_STRING(names[i], tinylink::log_level_to_string(levels[i]));
+            const char* context = tinylink_test::diag(
+                "log level=%s wire=%u", names[i], (unsigned)i);
+            TEST_ASSERT_TRUE_MESSAGE(tinylink::is_valid_log_level(i), context);
+            TEST_ASSERT_TRUE_MESSAGE(tinylink::is_valid_log_level(levels[i]), context);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                i, tinylink::log_level_to_wire(levels[i]), context);
+            TEST_ASSERT_TRUE_MESSAGE(tinylink::log_level_from_wire(i, decoded), context);
+            TEST_ASSERT_EQUAL_MESSAGE(
+                static_cast<int>(levels[i]), static_cast<int>(decoded), context);
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(
+                names[i], tinylink::log_level_to_string(levels[i]), context);
             for (uint8_t minimum = 0; minimum < 5; ++minimum) {
-                TEST_ASSERT_EQUAL(
+                TEST_ASSERT_EQUAL_MESSAGE(
                     i >= minimum,
-                    tinylink::log_level_meets_threshold(levels[i], levels[minimum]));
+                    tinylink::log_level_meets_threshold(levels[i], levels[minimum]),
+                    tinylink_test::diag("threshold level=%s minimum=%s",
+                        names[i], names[minimum]));
             }
         }
 
@@ -391,12 +428,18 @@ namespace {
 
         for (size_t i = 0; i < 3; ++i) {
             tinylink::MessageType decoded = tinylink::MessageType::Log;
-            TEST_ASSERT_EQUAL_UINT8(wire[i], tinylink::message_type_to_wire(types[i]));
-            TEST_ASSERT_TRUE(tinylink::is_reserved_message_type(wire[i]));
-            TEST_ASSERT_TRUE(tinylink::is_valid_message_type(types[i]));
-            TEST_ASSERT_TRUE(tinylink::message_type_from_wire(wire[i], decoded));
-            TEST_ASSERT_EQUAL(static_cast<int>(types[i]), static_cast<int>(decoded));
-            TEST_ASSERT_EQUAL_STRING(names[i], tinylink::message_type_to_string(types[i]));
+            const char* context = tinylink_test::diag(
+                "message type=%s wire='%c' index=%u", names[i], (char)wire[i], (unsigned)i);
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                wire[i], tinylink::message_type_to_wire(types[i]), context);
+            TEST_ASSERT_TRUE_MESSAGE(tinylink::is_reserved_message_type(wire[i]), context);
+            TEST_ASSERT_TRUE_MESSAGE(tinylink::is_valid_message_type(types[i]), context);
+            TEST_ASSERT_TRUE_MESSAGE(
+                tinylink::message_type_from_wire(wire[i], decoded), context);
+            TEST_ASSERT_EQUAL_MESSAGE(
+                static_cast<int>(types[i]), static_cast<int>(decoded), context);
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(
+                names[i], tinylink::message_type_to_string(types[i]), context);
         }
 
         tinylink::MessageType unchanged = tinylink::MessageType::Ack;
@@ -426,13 +469,16 @@ namespace {
         };
 
         for (size_t i = 0; i < 5; ++i) {
-            TEST_ASSERT_EQUAL_STRING(
-                names[i], tinylink::connection_state_to_string(states[i]));
-            TEST_ASSERT_EQUAL(i == 2, tinylink::is_connected(states[i]));
-            TEST_ASSERT_FALSE(tinylink::can_send(
-                states[i], tinylink::TransmitState::AwaitingAck));
-            TEST_ASSERT_EQUAL(i == 2, tinylink::can_send(
-                states[i], tinylink::TransmitState::Ready));
+            const char* context = tinylink_test::diag(
+                "connection state=%s index=%u", names[i], (unsigned)i);
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(
+                names[i], tinylink::connection_state_to_string(states[i]), context);
+            TEST_ASSERT_EQUAL_MESSAGE(i == 2, tinylink::is_connected(states[i]), context);
+            TEST_ASSERT_FALSE_MESSAGE(
+                tinylink::can_send(states[i], tinylink::TransmitState::AwaitingAck),
+                context);
+            TEST_ASSERT_EQUAL_MESSAGE(i == 2, tinylink::can_send(
+                states[i], tinylink::TransmitState::Ready), context);
         }
         TEST_ASSERT_EQUAL_STRING(
             "Invalid",

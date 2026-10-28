@@ -17,16 +17,25 @@ namespace tinylink {
 
 namespace tinylink_test {
 
+    /** @brief Payload type used by most engine tests (4 bytes). */
     struct Payload {
         uint8_t bytes[4];
     };
 
+    /** @brief Payload at the maximum supported size (PACKET_MAX_PAYLOAD_SIZE, 64). */
     struct MaximumPayload {
         uint8_t bytes[tinylink::packet::PACKET_MAX_PAYLOAD_SIZE];
     };
 
     typedef tinylink::TinyLink<Payload, FakeAdapter> Link;
 
+    /*
+     * Callback recorders: onData/onLog/onHandshake/onAck bump a counter and
+     * store the last argument in the globals below. They are shared by the
+     * engine suite's translation units; setUp() calls resetCallbacks().
+     * `ALL` (1000) is a scriptWrites() limit meaning "accept every byte" (it
+     * exceeds any frame size).
+     */
     extern unsigned int dataCallbackCount;
     extern unsigned int logCallbackCount;
     extern unsigned int handshakeCallbackCount;

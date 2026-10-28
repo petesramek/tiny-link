@@ -8,7 +8,24 @@
 
 namespace tinylink_test {
 
-    /** @brief Deterministic in-memory adapter for TinyLink engine tests. */
+    /**
+     * @brief Deterministic in-memory adapter for TinyLink engine tests.
+     *
+     * Satisfies the adapter contract (isOpen/available/read/write/millis) with
+     * no I/O or real time. Tests drive it by queueing inbound bytes
+     * (queueByte/queueBytes), reading back everything the engine wrote
+     * (output/outputSize), and setting or advancing the clock explicitly
+     * (setTime/advanceTime; the clock never moves on its own).
+     *
+     * Limits: input and output are each capped at BUFFER_CAPACITY (8192) bytes.
+     * Queueing past that returns false; a write that would exceed the output
+     * capacity fails as a whole. TinyLink frames are at most
+     * PACKET_MAX_SIZE (69 bytes: 64 max payload + 3 header + 2 checksum) before
+     * COBS, so the
+     * cap only matters for tests that queue many frames without clearing.
+     * scriptWrites() holds at most 8 entries; extra entries are dropped.
+     * Unlike real transports it never blocks and never reorders bytes.
+     */
     class FakeAdapter {
     public:
         /** @brief Maximum number of bytes retained in either test buffer. */
