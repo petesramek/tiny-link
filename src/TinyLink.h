@@ -145,6 +145,7 @@ private:
     uint8_t _nextTransmitSequence;
     uint8_t _pendingTransmitSequence;
     uint8_t _lastReceivedSequence;
+    bool _hasReceivedSequence;
     unsigned long _lastHandshakeSent;
     unsigned long _lastTransmit;
     unsigned long _lastReceiveByte;
@@ -154,6 +155,8 @@ private:
     T _mailbox;
     bool _hasNew;
     bool _outputDirty;
+
+    friend struct TinyLinkStatsAccess;
 
     TinyLink(const TinyLink&) = delete;
     TinyLink& operator=(const TinyLink&) = delete;
@@ -180,7 +183,7 @@ private:
             plain, sizeof(plain));
 
         if (packed.status != packet::PacketStatus::Success) {
-            ++_stats.packetEncodeFailures;
+            _stats.increment(TelemetryEvent::PacketEncodeFailed);
             return false;
         }
 
@@ -189,7 +192,7 @@ private:
             plain, packed.length, encoded, sizeof(encoded));
 
         if (cobs.status != codec::CobsStatus::Success) {
-            ++_stats.cobsEncodeFailures;
+            _stats.increment(TelemetryEvent::CobsEncodeFailed);
             return false;
         }
 
@@ -230,7 +233,7 @@ private:
         if (encode_handshake_message(
                 message, payload, sizeof(payload)) !=
             HandshakeMessageCodecStatus::Success) {
-            ++_stats.invalidHandshakes;
+            _stats.increment(TelemetryEvent::InvalidHandshake);
             return false;
         }
 
@@ -261,12 +264,12 @@ private:
 
         if (result.status != packet::PacketStatus::Success) {
             if (result.status == packet::PacketStatus::ChecksumMismatch) {
-                ++_stats.checksumMismatches;
+                _stats.increment(TelemetryEvent::ChecksumMismatch);
             } else if (result.status == packet::PacketStatus::LengthMismatch ||
                        result.status == packet::PacketStatus::FrameTooShort) {
-                ++_stats.packetLengthMismatches;
+                _stats.increment(TelemetryEvent::PacketLengthMismatch);
             } else {
-                ++_stats.payloadSizeMismatches;
+                _stats.increment(TelemetryEvent::PayloadSizeMismatch);
             }
             return;
         }
@@ -297,11 +300,17 @@ private:
             decode_handshake_message(payload, payloadLength, message);
 
         if (status != HandshakeMessageCodecStatus::Success) {
-            ++_stats.invalidHandshakes;
+            _stats.increment(TelemetryEvent::InvalidHandshake);
             if (status == HandshakeMessageCodecStatus::UnsupportedVersion) {
                 _connectionState = ConnectionState::Incompatible;
+                _hasReceivedSequence = false;
             }
             return;
+        }
+
+        if (message.kind == HandshakeKind::Request) {
+            // A peer restarting its handshake makes the old frame stale.
+            _hasReceivedSequence = false;
         }
 
         if (_onHandshakeReceived) {
@@ -329,13 +338,13 @@ private:
             decode_ack_message(payload, payloadLength, result);
 
         if (status != AckMessageCodecStatus::Success) {
-            ++_stats.invalidAckResults;
+            _stats.increment(TelemetryEvent::InvalidAckResult);
             return;
         }
 
         if (_transmitState != TransmitState::AwaitingAck ||
             sequence != _pendingTransmitSequence) {
-            ++_stats.unexpectedSequences;
+            _stats.increment(TelemetryEvent::UnexpectedSequence);
             return;
         }
 
@@ -353,7 +362,7 @@ private:
 
         if (decode_log_message(payload, payloadLength, message) !=
             LogMessageCodecStatus::Success) {
-            ++_stats.payloadSizeMismatches;
+            _stats.increment(TelemetryEvent::PayloadSizeMismatch);
             return;
         }
 
@@ -368,19 +377,20 @@ private:
                             size_t payloadLength)
     {
         if (!is_connected(_connectionState)) {
-            ++_stats.unexpectedMessageTypes;
+            _stats.increment(TelemetryEvent::UnexpectedMessageType);
             return;
         }
 
         if (payloadLength != sizeof(T)) {
-            ++_stats.payloadSizeMismatches;
+            _stats.increment(TelemetryEvent::PayloadSizeMismatch);
             return;
         }
 
         memcpy(&_mailbox, payload, sizeof(T));
         _lastReceivedSequence = sequence;
+        _hasReceivedSequence = true;
         _hasNew = true;
-        ++_stats.packetsReceived;
+        _stats.increment(TelemetryEvent::PacketReceived);
 
         if (_onDataReceived) {
             _onDataReceived(_mailbox);
@@ -406,7 +416,7 @@ private:
         _receiveState = ReceiveState::WaitingForFrame;
 
         if (decoded.status != codec::CobsStatus::Success) {
-            ++_stats.cobsDecodeFailures;
+            _stats.increment(TelemetryEvent::CobsDecodeFailed);
             return;
         }
 
@@ -434,7 +444,7 @@ private:
         }
 
         if (_encodedReceiveLength >= sizeof(_encodedReceive)) {
-            ++_stats.receiveOverflows;
+            _stats.increment(TelemetryEvent::ReceiveOverflow);
             _encodedReceiveLength = 0;
             _receiveState = ReceiveState::DiscardingFrame;
             return;
@@ -460,6 +470,7 @@ public:
           _nextTransmitSequence(0),
           _pendingTransmitSequence(0),
           _lastReceivedSequence(0),
+          _hasReceivedSequence(false),
           _lastHandshakeSent(0),
           _lastTransmit(0),
           _lastReceiveByte(0),
@@ -500,6 +511,7 @@ public:
     {
         _handshakeEnabled = true;
         _connectionState = ConnectionState::Connecting;
+        _hasReceivedSequence = false;
         return send_handshake(HandshakeKind::Request);
     }
 
@@ -515,6 +527,7 @@ public:
         _nextTransmitSequence = 0;
         _pendingTransmitSequence = 0;
         _lastReceivedSequence = 0;
+        _hasReceivedSequence = false;
     }
 
     /** @brief Process timers and all currently available transport bytes. */
@@ -534,14 +547,14 @@ public:
 
         if (_receiveState == ReceiveState::ReceivingFrame &&
             now - _lastReceiveByte >= _timeout) {
-            ++_stats.interByteTimeouts;
+            _stats.increment(TelemetryEvent::InterByteTimeout);
             _encodedReceiveLength = 0;
             _receiveState = ReceiveState::WaitingForFrame;
         }
 
         if (_transmitState == TransmitState::AwaitingAck &&
             now - _lastTransmit >= _timeout) {
-            ++_stats.ackTimeouts;
+            _stats.increment(TelemetryEvent::AckTimeout);
             _transmitState = TransmitState::Ready;
         }
 
@@ -615,9 +628,21 @@ public:
         return true;
     }
 
-    /** @brief Acknowledge the most recently accepted application frame. */
+    /**
+     * @brief Acknowledge the most recently accepted application frame.
+     *
+     * Returns false without writing until an application frame has been
+     * accepted. The acknowledged sequence stays valid across callback
+     * delivery, read() and flush(). It is invalidated by construction,
+     * reset(), begin(), a peer handshake request (peer restart) and an
+     * unsupported handshake version (Incompatible).
+     */
     bool sendAck(AckResult result = AckResult::Ok)
     {
+        if (!_hasReceivedSequence) {
+            return false;
+        }
+
         uint8_t payload[ACK_MESSAGE_WIRE_SIZE] = {};
         if (encode_ack_message(result, payload, sizeof(payload)) !=
             AckMessageCodecStatus::Success) {

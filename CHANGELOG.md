@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All registered in `test/test_runner.cpp`.
 
 ### Changed
+- `TinyLink` telemetry now uses the saturating `Stats::increment(TelemetryEvent)` API for every
+  counter, so engine counters never wrap. `sendAck()` now returns `false` (writing nothing) until
+  an application frame has been accepted; the acknowledged sequence survives callback delivery,
+  `read()` and `flush()` and is invalidated by construction, `reset()`, `begin()`, a peer handshake
+  request, and an unsupported-version handshake.
 - `TinyLink<T, Adapter>` now requires payload type `T` to be trivially copyable, enforced with a
   `static_assert` on every toolchain including AVR (compiler intrinsic where `<type_traits>` is
   unavailable). Trivially copyable is only a minimum object-safety requirement; raw object memory
