@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `test/test_adapter_posix`: Linux pseudo-terminal tests for `TinyPosixAdapter` covering open
+  failures, raw 8N1 configuration, non-blocking I/O, write results, descriptor cleanup,
+  non-copyability, and monotonic time. Skipped (ignored) only on Windows hosts.
 - `src/adapters/WriteResult.h`: result-bearing write contract shared by all built-in adapters,
   reporting complete, partial, failed, and zero-length operations.
 - `src/protocol/Status.h`: focused header with expanded `TinyStatus` enum (STATUS_OK, ERR_CRC,
