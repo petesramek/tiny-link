@@ -5,9 +5,8 @@
  * The adapter opens, configures, owns, and closes one Windows serial handle.
  * Construction leaves the adapter closed when any required setup step fails.
  *
- * The current TinyLink adapter contract does not report write results. Partial
- * writes and errors reported by WriteFile() are therefore intentionally not
- * exposed to TinyLink.
+ * WriteFile() results are exposed to TinyLink. Partial writes are not retried
+ * by this adapter.
  */
 #ifndef TINYLINK_ADAPTERS_TINYWINDOWSADAPTER_H
 #define TINYLINK_ADAPTERS_TINYWINDOWSADAPTER_H
@@ -19,6 +18,8 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "adapters/WriteResult.h"
 
 namespace tinylink {
 
@@ -216,62 +217,70 @@ namespace tinylink {
         /**
          * @brief Write one byte using synchronous Win32 I/O.
          *
-         * The WriteFile() result and accepted byte count are ignored because the
-         * current TinyLink adapter contract does not report write completion.
+         * @return Complete result only when WriteFile() accepts the byte.
          *
          * @param value Byte to write.
          */
-        inline void write(uint8_t value)
+        inline WriteResult write(uint8_t value)
         {
             if (!isOpen()) {
-                return;
+                return WriteResult::failure();
             }
 
             DWORD bytesWritten = 0;
 
-            static_cast<void>(
-                WriteFile(
+            if (!WriteFile(
                     _handle,
                     &value,
                     1,
                     &bytesWritten,
-                    nullptr));
+                    nullptr)) {
+                return WriteResult::failure();
+            }
+
+            return WriteResult::fromCount(
+                1,
+                static_cast<size_t>(bytesWritten));
         }
 
         /**
          * @brief Write a byte sequence using synchronous Win32 I/O.
          *
-         * The WriteFile() result and accepted byte count are ignored because the
-         * current TinyLink adapter contract does not report partial or failed
-         * writes. Win32 accepts a DWORD length, so larger requests are rejected
-         * rather than truncated. A null pointer is valid only when @p length is
-         * zero.
+         * Partial writes are returned without retrying. Win32 accepts a DWORD
+         * length, so larger requests are rejected rather than truncated. A null
+         * pointer is valid only when @p length is zero.
          *
          * @param data Bytes to write, or nullptr when @p length is zero.
          * @param length Number of bytes to write.
+         * @return Outcome and accepted byte count.
          */
-        inline void write(
+        inline WriteResult write(
             const uint8_t* data,
             size_t length)
         {
-            if (!isOpen() || length == 0) {
-                return;
+            if (length == 0) {
+                return WriteResult::fromCount(0, 0);
             }
 
-            if (!data ||
+            if (!isOpen() || !data ||
                 length > static_cast<size_t>(MAXDWORD)) {
-                return;
+                return WriteResult::failure();
             }
 
             DWORD bytesWritten = 0;
 
-            static_cast<void>(
-                WriteFile(
+            if (!WriteFile(
                     _handle,
                     data,
                     static_cast<DWORD>(length),
                     &bytesWritten,
-                    nullptr));
+                    nullptr)) {
+                return WriteResult::failure();
+            }
+
+            return WriteResult::fromCount(
+                length,
+                static_cast<size_t>(bytesWritten));
         }
 
         /**

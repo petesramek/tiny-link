@@ -19,6 +19,10 @@ static uint8_t tinylinkEspReadValue = 0;
 static size_t tinylinkEspWriteCalls = 0;
 static size_t tinylinkEspLastWriteLength = 0;
 static uint8_t tinylinkEspLastWriteBytes[64] = {};
+/** @brief Select the configured ESP-IDF write return value for a test. */
+static bool tinylinkEspWriteResultOverridden = false;
+/** @brief ESP-IDF write result used when the override is enabled. */
+static int tinylinkEspWriteResult = 0;
 
 inline bool uart_is_driver_installed(uart_port_t)
 {
@@ -60,7 +64,9 @@ inline int uart_write_bytes(
             tinylinkEspLastWriteBytes[i] = static_cast<uint8_t>(data[i]);
         }
     }
-    return static_cast<int>(length);
+    return tinylinkEspWriteResultOverridden
+        ? tinylinkEspWriteResult
+        : static_cast<int>(length);
 }
 
 #endif // TINYLINK_TEST_ESP_IDF_UART_STUB_H

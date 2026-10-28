@@ -102,31 +102,59 @@ namespace {
         TEST_ASSERT_EQUAL_INT(0, adapter.available());
     }
 
-    void testWindowsAdapterWritesValuesAndEnforcesDwordLengthLimit()
+    void testWindowsAdapterReportsCompletePartialFailedAndEmptyWrites()
     {
         tinylink::TinyWindowsAdapter adapter("COM3");
         const uint8_t bytes[] = { 0x13u, 0x00u, 0xF1u };
-        adapter.write(0xA4u);
+        tinylink::WriteResult result = adapter.write(0xA4u);
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Complete),
+            static_cast<int>(result.status));
         TEST_ASSERT_EQUAL_UINT32(1, tinylinkWindowsWriteCalls);
         TEST_ASSERT_EQUAL_UINT32(1, tinylinkWindowsLastWriteLength);
-        adapter.write(bytes, sizeof(bytes));
+        result = adapter.write(bytes, sizeof(bytes));
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Complete),
+            static_cast<int>(result.status));
+        TEST_ASSERT_EQUAL_UINT32(sizeof(bytes), result.bytesWritten);
         TEST_ASSERT_EQUAL_UINT32(2, tinylinkWindowsWriteCalls);
         TEST_ASSERT_EQUAL_UINT32(sizeof(bytes), tinylinkWindowsLastWriteLength);
         TEST_ASSERT_EQUAL_UINT8_ARRAY(
             bytes, tinylinkWindowsWrittenBytes, sizeof(bytes));
 
-        adapter.write(nullptr, 0);
-        adapter.write(nullptr, 1);
+        result = adapter.write(nullptr, 0);
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::ZeroLength),
+            static_cast<int>(result.status));
+        result = adapter.write(nullptr, 1);
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Failed),
+            static_cast<int>(result.status));
         TEST_ASSERT_EQUAL_UINT32(2, tinylinkWindowsWriteCalls);
 
         if (static_cast<size_t>(MAXDWORD) < static_cast<size_t>(-1)) {
-            adapter.write(bytes, static_cast<size_t>(MAXDWORD) + 1u);
+            result = adapter.write(bytes, static_cast<size_t>(MAXDWORD) + 1u);
+            TEST_ASSERT_EQUAL(
+                static_cast<int>(tinylink::WriteStatus::Failed),
+                static_cast<int>(result.status));
             TEST_ASSERT_EQUAL_UINT32(2, tinylinkWindowsWriteCalls);
         }
 
         tinylinkWindowsWriteSucceeds = false;
-        adapter.write(bytes, sizeof(bytes));
+        result = adapter.write(bytes, sizeof(bytes));
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Failed),
+            static_cast<int>(result.status));
         TEST_ASSERT_EQUAL_UINT32(3, tinylinkWindowsWriteCalls);
+
+        tinylinkWindowsWriteSucceeds = true;
+        tinylinkWindowsWriteCountOverridden = true;
+        tinylinkWindowsWriteAcceptedBytes = 2;
+        result = adapter.write(bytes, sizeof(bytes));
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Partial),
+            static_cast<int>(result.status));
+        TEST_ASSERT_EQUAL_UINT32(2, result.bytesWritten);
     }
 
     void testWindowsAdapterUsesDeterministicTickAndSaturatesAvailability()
@@ -147,7 +175,7 @@ int main()
     RUN_TEST(testWindowsAdapterClosedMethodsAreSafe);
     RUN_TEST(testWindowsAdapterClosesHandleWhenConfigurationFails);
     RUN_TEST(testWindowsAdapterReportsQueuedBytesAndReadsAvailableByte);
-    RUN_TEST(testWindowsAdapterWritesValuesAndEnforcesDwordLengthLimit);
+    RUN_TEST(testWindowsAdapterReportsCompletePartialFailedAndEmptyWrites);
     RUN_TEST(testWindowsAdapterUsesDeterministicTickAndSaturatesAvailability);
     return UNITY_END();
 }

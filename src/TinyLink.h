@@ -22,6 +22,7 @@
 #endif
 
 #include "Version.h"
+#include "adapters/WriteResult.h"
 #include "internal/codec/CobsCodec.h"
 #include "internal/codec/Packet.h"
 #include "internal/protocol/AckMessage.h"
@@ -50,7 +51,14 @@ private:
             static_cast<const uint8_t*>(nullptr), size_t(0))),
         static_cast<void>(static_cast<unsigned long>(
             std::declval<Candidate>().millis())),
-        std::true_type());
+        std::integral_constant<bool,
+        std::is_same<
+            decltype(std::declval<Candidate&>().write(uint8_t(0))),
+            WriteResult>::value &&
+        std::is_same<
+            decltype(std::declval<Candidate&>().write(
+                static_cast<const uint8_t*>(nullptr), size_t(0))),
+            WriteResult>::value>());
 
     template <typename>
     static std::false_type check(...);

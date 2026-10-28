@@ -29,6 +29,7 @@ static size_t tinylinkHalTransmitCalls = 0;
 static uint8_t tinylinkHalTransmittedBytes[64] = {};
 static uint32_t tinylinkHalTick = 0;
 
+/** @brief Report whether the stub UART receive flag is set. */
 inline uint32_t tinylink_hal_get_flag(
     UART_HandleTypeDef*,
     uint32_t)
@@ -39,6 +40,7 @@ inline uint32_t tinylink_hal_get_flag(
 #define __HAL_UART_GET_FLAG(handle, flag) \
     tinylink_hal_get_flag((handle), (flag))
 
+/** @brief Simulate one HAL receive call with configurable status and byte. */
 inline HAL_StatusTypeDef HAL_UART_Receive(
     UART_HandleTypeDef*,
     uint8_t* value,
@@ -53,6 +55,7 @@ inline HAL_StatusTypeDef HAL_UART_Receive(
     return tinylinkHalReceiveStatus;
 }
 
+/** @brief Simulate one HAL transmit call and capture its arguments. */
 inline HAL_StatusTypeDef HAL_UART_Transmit(
     UART_HandleTypeDef*,
     uint8_t* data,
@@ -70,6 +73,7 @@ inline HAL_StatusTypeDef HAL_UART_Transmit(
     return tinylinkHalTransmitStatus;
 }
 
+/** @brief Return the deterministic HAL tick configured by a test. */
 inline uint32_t HAL_GetTick()
 {
     return tinylinkHalTick;

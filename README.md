@@ -264,6 +264,15 @@ Serial.print("CRC Errors: "); Serial.println(stats.crcErrs);
 Serial.print("Timeouts: "); Serial.println(stats.timeouts);
 ```
 
+## Adapter Write Results
+
+Built-in adapter `write()` overloads return `tinylink::WriteResult`, with a
+`WriteStatus` and the number of bytes accepted by the platform. The status is
+`Complete`, `Partial`, `Failed`, or `ZeroLength`. Adapters do not retry partial
+writes. Applications implementing a custom adapter must return this result
+from both the single-byte and buffer `write()` overloads, and must not treat a
+partial frame as complete.
+
 ## 📂 Project Structure
 
 `src/`: Core protocol logic (`TinyLink.h`, `TinyProtocol.h`).

@@ -6,9 +6,8 @@
  * descriptor. Construction leaves the adapter closed when any required setup
  * step fails.
  *
- * The current TinyLink adapter contract does not report write results. Partial
- * writes and write errors reported by POSIX write() are therefore intentionally
- * not exposed to TinyLink.
+ * POSIX write() results are exposed to TinyLink. Partial writes are not retried
+ * by this adapter.
  */
 #ifndef TINYLINK_ADAPTERS_TINYPOSIXADAPTER_H
 #define TINYLINK_ADAPTERS_TINYPOSIXADAPTER_H
@@ -26,6 +25,8 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
+
+#include "adapters/WriteResult.h"
 
 namespace tinylink {
 
@@ -164,46 +165,59 @@ public:
     /**
      * @brief Write one byte to the serial device.
      *
-     * The POSIX write() result is ignored because the current TinyLink adapter
-     * contract does not report partial or failed writes.
+     * @return Complete, partial, or failed result reported by POSIX.
      *
      * @param value Byte to write.
      */
-    inline void write(uint8_t value)
+    inline WriteResult write(uint8_t value)
     {
         if (!isOpen()) {
-            return;
+            return WriteResult::failure();
         }
 
-        static_cast<void>(::write(
+        const ssize_t bytesWritten = ::write(
             _fileDescriptor,
             &value,
-            1));
+            1);
+        return bytesWritten < 0
+            ? WriteResult::failure()
+            : WriteResult::fromCount(
+                1,
+                static_cast<size_t>(bytesWritten));
     }
 
     /**
      * @brief Write a byte sequence to the serial device.
      *
-     * The POSIX write() result is ignored because the current TinyLink adapter
-     * contract does not report partial or failed writes. Because the descriptor
-     * is non-blocking, callers must not assume the whole buffer was accepted.
-     * A null pointer is valid only when @p length is zero.
+     * Because the descriptor is non-blocking, the returned result may be
+     * partial. The adapter does not retry. A null pointer is valid only when
+     * @p length is zero.
      *
      * @param data Bytes to write, or nullptr when @p length is zero.
      * @param length Number of bytes to write.
+     * @return Outcome and accepted byte count.
      */
-    inline void write(
+    inline WriteResult write(
         const uint8_t* data,
         size_t length)
     {
-        if (!isOpen() || length == 0 || !data) {
-            return;
+        if (length == 0) {
+            return WriteResult::fromCount(0, 0);
         }
 
-        static_cast<void>(::write(
+        if (!isOpen() || !data) {
+            return WriteResult::failure();
+        }
+
+        const ssize_t bytesWritten = ::write(
             _fileDescriptor,
             data,
-            length));
+            length);
+        return bytesWritten < 0
+            ? WriteResult::failure()
+            : WriteResult::fromCount(
+                length,
+                static_cast<size_t>(bytesWritten));
     }
 
     /**

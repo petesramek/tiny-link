@@ -6,8 +6,8 @@
  * the ESP-IDF UART driver. The application remains responsible for the UART
  * driver's configuration and lifetime.
  *
- * The current TinyLink adapter contract does not report write results. Return
- * values from uart_write_bytes() are therefore intentionally ignored.
+ * Return values from uart_write_bytes() are exposed as TinyLink write results.
+ * Partial writes are not retried by this adapter.
  */
 #ifndef TINYLINK_ADAPTERS_TINYESPIDFADAPTER_H
 #define TINYLINK_ADAPTERS_TINYESPIDFADAPTER_H
@@ -20,6 +20,8 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "adapters/WriteResult.h"
 
 namespace tinylink {
 
@@ -114,49 +116,56 @@ public:
     /**
      * @brief Queue one byte for transmission.
      *
-     * The uart_write_bytes() result is ignored because the current TinyLink
-     * adapter contract does not report partial or failed writes.
+     * @return Complete or failed result reported by ESP-IDF.
      *
      * @param value Byte to write.
      */
-    inline void write(uint8_t value)
+    inline WriteResult write(uint8_t value)
     {
         if (!isOpen()) {
-            return;
+            return WriteResult::failure();
         }
 
-        uart_write_bytes(
+        const int bytesWritten = uart_write_bytes(
             _uartPort,
             reinterpret_cast<const char*>(&value),
             1);
+        return bytesWritten < 0
+            ? WriteResult::failure()
+            : WriteResult::fromCount(1, static_cast<size_t>(bytesWritten));
     }
 
     /**
      * @brief Queue a byte sequence for transmission.
      *
-     * The uart_write_bytes() result is ignored because the current TinyLink
-     * adapter contract does not report partial or failed writes. A null data
-     * pointer is valid only when @p length is zero.
+     * Partial writes are returned without retrying. A null data pointer is
+     * valid only when @p length is zero.
      *
      * @param data Bytes to write, or nullptr when @p length is zero.
      * @param length Number of bytes to write.
+     * @return Outcome and accepted byte count.
      */
-    inline void write(
+    inline WriteResult write(
         const uint8_t* data,
         size_t length)
     {
-        if (!isOpen() || length == 0) {
-            return;
+        if (length == 0) {
+            return WriteResult::fromCount(0, 0);
         }
 
-        if (!data || length > static_cast<size_t>(INT_MAX)) {
-            return;
+        if (!isOpen() || !data || length > static_cast<size_t>(INT_MAX)) {
+            return WriteResult::failure();
         }
 
-        uart_write_bytes(
+        const int bytesWritten = uart_write_bytes(
             _uartPort,
             reinterpret_cast<const char*>(data),
             length);
+        return bytesWritten < 0
+            ? WriteResult::failure()
+            : WriteResult::fromCount(
+                length,
+                static_cast<size_t>(bytesWritten));
     }
 
     /**
