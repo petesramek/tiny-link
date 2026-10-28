@@ -25,6 +25,6 @@ struct SensorMessage {
 
 // Convenience constants — avoid scattering the cast everywhere.
 static const uint8_t TYPE_CMD  =
-    static_cast<uint8_t>(tinylink::MessageType::Cmd);
+    'C';
 static const uint8_t TYPE_DATA =
-    static_cast<uint8_t>(tinylink::MessageType::Data);
+    'D';

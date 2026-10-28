@@ -96,13 +96,10 @@ void setup() {
     link.onDataReceived(onSensorData);
     link.begin();  // Initiate TinyLink handshake.
 
-    // Attach the static ISR function — no enableAutoUpdate() needed;
-    // the constructor already registered this instance.
-    tinyLinkTicker.attach_ms(1,
-        TinyLink<SensorMessage, TinyArduinoAdapter>::autoUpdateISR);
 }
 
 void loop() {
+    link.update();
     // Process received sensor data (deferred from ISR context).
     if (g_dataReady) {
         g_dataReady = false;                           // clear first (re-entry safe)

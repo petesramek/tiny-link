@@ -1,129 +1,57 @@
 # Changelog
 
-All notable changes to **TinyLink** will be documented in this file.
+All notable changes to TinyLink are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- ─────────────────────────────────────────────────────────────────────────
-     HOW TO ADD ENTRIES
-     ─────────────────────────────────────────────────────────────────────────
-     For every release, copy the [Unreleased] section below, set the version
-     number and date, then clear the [Unreleased] section for the next cycle.
-
-     Subsections (use only those that apply):
-       ### Added      – new features
-       ### Changed    – changes in existing functionality
-       ### Deprecated – features that will be removed in a future release
-       ### Removed    – features removed in this release
-       ### Fixed      – bug fixes
-       ### Security   – security-related fixes or improvements
-     ──────────────────────────────────────────────────────────────────────── -->
-
 ## [Unreleased]
 
-### Changed
-- Native tests now build with `-std=c++11 -Wall -Wextra -Werror -pedantic` (no warnings needed fixing),
-  the unnecessary `test_build_src` setting was removed, and a `native_sanitized` (ASan + UBSan)
-  environment runs in Linux CI. Sanitizers could not be linked on the Windows/Clang host (missing
-  runtimes), so that job is verified by CI only; AVR/ESP8266 builds were not run locally.
-- Documented the native test infrastructure (`test/README.md`, fake adapter, helpers, platform
-  stubs, compile-contract probes, capacity assumptions) and made loop-based assertions report the
-  failing index, length, or value via `TEST_ASSERT_*_MESSAGE` and the new `diag()` helper
-  (`test/support/tinylink/TestDiagnostics.h`). No production or coverage changes.
-- Reorganized native test suites under `test/suites` by adapter, engine, protocol, and codec
-  responsibility (`test_dir` in `platformio.ini`). The TinyLink suite is split into lifecycle,
-  application, ACK/sequence, receive/mailbox, timeout, overflow/recovery, logging, and telemetry
-  files with a shared fixture; platform SDK stubs and the fake adapter now live under
-  `test/support`. All registered tests are preserved, including the Linux-only POSIX PTY tests.
+## [0.5.0] – 2026-10-28
 
 ### Added
-- `test/suites/test_adapters_posix`: Linux pseudo-terminal tests for `TinyPosixAdapter` covering open
-  failures, raw 8N1 configuration, non-blocking I/O, write results, descriptor cleanup,
-  non-copyability, and monotonic time. Skipped (ignored) only on Windows hosts.
-- `src/adapters/WriteResult.h`: result-bearing write contract shared by all built-in adapters,
-  reporting complete, partial, failed, and zero-length operations.
-- `src/protocol/Status.h`: focused header with expanded `TinyStatus` enum (STATUS_OK, ERR_CRC,
-  ERR_TIMEOUT, ERR_OVERFLOW, ERR_BUSY, ERR_PROCESSING, ERR_UNKNOWN) and `tinystatus_to_string()` helper.
-- `src/protocol/State.h`: focused header with expanded `TinyState` enum (CONNECTING, HANDSHAKING,
-  WAIT_FOR_SYNC, IN_FRAME, FRAME_COMPLETE, AWAITING_ACK).
-- `src/protocol/Stats.h`: focused header with `TinyStats` struct (extracted from `TinyProtocol.h`),
-  plus a new `clear()` method.
-- `src/protocol/AckMessage.h`: packed `TinyAck` struct (`uint8_t seq` + `TinyStatus result`,
-  2 bytes) for `MessageType::Ack` (`'A'`) frames.
-- `src/protocol/DebugMessage.h`: packed `DebugMessage` struct (32 bytes: `uint32_t ts`,
-  `uint8_t level`, `char text[27]`) for `MessageType::Debug` (`'g'`) frames, with
-  `debugmessage_set_text()` helper and `DEBUG_TEXT_CAPACITY` constant.
-- `MessageType::Ack = 'A'` added to `src/protocol/MessageType.h`.
-- `src/protocol/MessageType.h`: focused header with `MessageType` enum, `message_type_from_wire()`,
-  `message_type_to_wire()`, and `message_type_to_string()` helpers.
-- Migration guide in README for all breaking changes in this release.
-- `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `CHANGELOG.md`, issue/PR templates,
-  and `CITATION.cff` for OSS best practices.
-- Unity-style unit tests: `test_stats`, `test_ackmessage`, `test_ackmessage_more`,
-  `test_debugmessage`, `test_debugmessage_edgecases`, `test_message_type`, `test_status_strings`.
-  All registered in `test/test_runner.cpp`.
+- Result-bearing adapter writes through `tinylink::WriteResult`, distinguishing complete,
+  partial, failed, and zero-length requests.
+- Protocol-version handshake negotiation and public connection lifecycle states.
+- Sequence-correlated acknowledgements, decoded log callbacks, and structured telemetry.
+- Native test suites for codecs, protocol helpers, engine behavior, and platform adapters,
+  plus payload compile-contract checks.
 
 ### Changed
-- `TinyLink` telemetry now uses the saturating `Stats::increment(TelemetryEvent)` API for every
-  counter, so engine counters never wrap. `sendAck()` now returns `false` (writing nothing) until
-  an application frame has been accepted; the acknowledged sequence survives callback delivery,
-  `read()` and `flush()` and is invalidated by construction, `reset()`, `begin()`, a peer handshake
-  request, and an unsupported-version handshake.
-- `TinyLink<T, Adapter>` now requires payload type `T` to be trivially copyable, enforced with a
-  `static_assert` on every toolchain including AVR (compiler intrinsic where `<type_traits>` is
-  unavailable). Trivially copyable is only a minimum object-safety requirement; raw object memory
-  is still not portable between differing peers, which must serialize explicitly.
-  Added `tinylink::is_payload_copyable<T>` and compile-contract checks in `tools/compile_contract`.
-- `TinyLink::begin()` now returns `bool` (was `void`): `true` only if the first handshake
-  request was completely written. On `false` the link stays `Connecting` and `update()` retries.
-  Existing callers may ignore the result.
-- The engine honours `WriteResult`: `sendData()`, `sendAck()`, `sendLog()` and handshakes return
-  `false` unless both the encoded frame and its delimiter were fully accepted. Failed output does
-  not enter `AwaitingAck` or consume a transmit sequence. A received handshake request connects
-  only after its response was written. A partial body or failed delimiter leaves an unterminated
-  fragment; it is not resumed, and the next write first emits a recovery delimiter so the peer
-  discards the fragment. A frame whose delimiter failed may still be delivered by the peer.
-- Adapter closure detected by `update()` moves the link to `ConnectionState::Failed`, clears
-  partial receive and pending ACK state, and preserves delivered polling data and the next
-  transmit sequence. Reopening restarts handshake negotiation for links started with `begin()`;
-  peer-synchronized links return to `Inactive` and await fresh synchronization.
-- `src/TinyProtocol.h` is now a lightweight umbrella header that re-exports all focused
-  `src/protocol/*.h` headers. Existing `#include "TinyProtocol.h"` continues to work unchanged.
-- `TinyStatus` expanded with granular ACK codes (ERR_OVERFLOW, ERR_BUSY, ERR_PROCESSING,
-  ERR_UNKNOWN) and moved to `src/protocol/Status.h`.  Wire values for ERR_CRC (0x01) and
-  ERR_TIMEOUT (0x02) are now explicitly assigned.
-- `TinyState` expanded with CONNECTING, HANDSHAKING, FRAME_COMPLETE, AWAITING_ACK states and
-  moved to `src/protocol/State.h`.
-- `TinyStats` moved to `src/protocol/Stats.h`; gained `clear()` method.
-- Examples updated to use `message_type_to_wire(MessageType::Cmd)`.
-- Payload size limit reduced from 240 bytes to 64 bytes to enforce micro-message design intent
-  and eliminate a latent `_rawIdx` overflow bug on large payloads.
+- Application payloads must be trivially copyable and no larger than 64 bytes. Payload object
+  representations are transmitted as-is; applications with peers using different layouts must
+  serialize fields explicitly.
+- `begin()` reports whether the initial handshake request was fully written. A failed request
+  leaves the link connecting and is retried by `update()`.
+- `sendData()` and other frame-writing operations fail unless the complete encoded frame and
+  delimiter are accepted by the adapter. Failed application writes do not consume a sequence
+  number or enter the awaiting-ACK state.
+- `update()` detects transport loss, clears partial receive and pending ACK state, and supports
+  handshake recovery when a previously opened adapter becomes available again.
+- Telemetry counters saturate instead of wrapping; snapshots are available through `stats()`
+  and can be reset with `clearStats()`.
+- Polling reads use `read()`, which returns the latest payload by value and clears its
+  availability flag. Callback registration uses `onDataReceived()`.
+- Application message identifiers are caller-defined `uint8_t` values. `MessageType` describes
+  only TinyLink's reserved internal frames: Log (`'L'`), Ack (`'A'`), and Handshake (`'H'`).
 
 ### Removed
-- **[Breaking]** `MessageType::Req` (wire byte `'R'`) removed; replaced by `MessageType::Cmd`
-  (wire byte `'C'`).  The legacy `'R'` mapping in `message_type_from_wire()` has been dropped —
-  peers must use `'C'` for command frames going forward.
-- **[Breaking]** `TinyResult` enum removed; replaced by the unified `TinyStatus` enum in
-  `src/protocol/Status.h`.  `Result.h` has been superseded by `AckMessage.h`.
-
----
+- The legacy `peek()` polling API; use `read()` to retrieve a payload, or use
+  `onDataReceived()` for callback-driven handling.
+- The legacy `TinyStats`/`getStats()` statistics API; use `Stats` and `stats()`.
+- Automatic ISR update hooks. Applications must call `update()` regularly from a supported
+  execution context; the engine is not an ISR API.
 
 ## [0.4.0] – 2026-01-01
 
 ### Added
 - Multi-platform adapter support: Arduino, Linux (POSIX), Windows (Win32), ESP-IDF, and STM32 HAL.
-- Fletcher-16 checksum for robust error detection.
-- COBS framing for reliable stream synchronisation.
-- Zero-heap, zero-copy design suitable for 8-bit AVR (≥ 512 B RAM).
-- Event-driven callback API (`onReceive()`).
-- Polling API (`available()` / `peek()` / `flush()`).
-- Real-time telemetry via `getStats()` (packets, CRC errors, timeouts).
-- PlatformIO library manifest (`library.properties`, `platformio.ini`).
-- Native unit test suite using `TinyTestAdapter`.
-- Comprehensive `README.md` with usage examples, architecture notes, and hardware wiring guide.
+- Fletcher-16 checksum, COBS framing, and a zero-heap transport design for constrained devices.
+- Callback and polling receive APIs, real-time telemetry, the PlatformIO manifest, and native
+  unit tests.
 
 ---
 
-[Unreleased]: https://github.com/petesramek/tiny-link/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/petesramek/tiny-link/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/petesramek/tiny-link/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/petesramek/tiny-link/releases/tag/v0.4.0

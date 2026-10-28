@@ -54,7 +54,7 @@ void onRequest(const SensorMessage& req) {
 // Timer ISR — fires every 1 ms and drives the TinyLink engine
 // ---------------------------------------------------------------------------
 ISR(TIMER1_COMPA_vect) {
-    TinyLink<SensorMessage, TinyArduinoAdapter>::autoUpdateISR();
+    // Keep TinyLink processing in loop(), not in an interrupt.
 }
 
 // Timer1 CTC setup: 1 ms @ 8 MHz, prescaler 64, OCR1A = 124
@@ -81,6 +81,7 @@ void setup() {
 }
 
 void loop() {
+    link.update();
     // Handle the pending command outside ISR context — safe to call Serial.
     if (g_cmdPending) {
         g_cmdPending = false;           // clear first (re-entry safe)

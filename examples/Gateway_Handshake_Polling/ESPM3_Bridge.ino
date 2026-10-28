@@ -19,14 +19,13 @@ void setup() {
     // 3. Signal to Tiny88 that we are stable and ready for data
     TinyLink<GatewayStatus, TinyArduinoAdapter> statusLink(adapter);
     GatewayStatus msg = { 1, 0 };
-    statusLink.sendData(message_type_to_wire(MessageType::Cmd), msg);
+    statusLink.sendData(static_cast<uint8_t>('C'), msg);
 }
 
 void loop() {
     sensorLink.update();
     if (sensorLink.available()) {
-        const SensorData& d = sensorLink.peek();
+        sensorLink.read();
         // Forward to Cloud...
-        sensorLink.flush();
     }
 }

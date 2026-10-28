@@ -50,7 +50,7 @@ void onRequest(const SensorMessage& req) {
 // — no extra setup, no interrupt configuration, no third-party library.
 // ---------------------------------------------------------------------------
 void serialEvent() {
-    TinyLink<SensorMessage, TinyArduinoAdapter>::autoUpdateISR();
+    link.update();
 }
 
 // ---------------------------------------------------------------------------
@@ -62,6 +62,5 @@ void setup() {
 }
 
 void loop() {
-    // Application logic only — no link.update() needed.
-    // serialEvent() drives the TinyLink engine between loop() iterations.
+    // Application logic runs here; serialEvent() also calls link.update().
 }

@@ -26,7 +26,7 @@ This example registers a listener function that executes inside the `link.update
 ```cpp
 void myHandler(const MyData& data) {
     // Handle your data here...
-    // No need to call peek() or flush()
+    // No need to poll with available() or read()
 }
 
 void setup() {
@@ -40,7 +40,7 @@ void loop() {
 
 **`link.onDataReceived()`**: Registers a custom function to be called as soon as a valid packet is verified.
 **`link.update()`**: Maintains the protocol engine and triggers the registered callback internally.
-**`Asynchronous`**: The callback pattern removes the need for manual `available()` checks or `flush()` calls in your main loop.
+**`Callback-driven`**: The callback pattern removes the need for manual `available()` checks or `read()` calls in your main loop.
 
 ## 🚀 How to Run
 Upload `Tiny88_Sensor.ino` to the **MH-Tiny88**.

@@ -79,7 +79,7 @@ void onSensorData(const SensorMessage& data) {
 // Arduino calls serialEvent() automatically when Serial RX bytes are waiting
 // ---------------------------------------------------------------------------
 void serialEvent() {
-    TinyLink<SensorMessage, TinyArduinoAdapter>::autoUpdateISR();
+    link.update();
 }
 
 // ---------------------------------------------------------------------------

@@ -16,20 +16,19 @@ void loop() {
 
     // Polling for new data
     if (link.available()) {
-        const MyData& incoming = link.peek();
+        const MyData incoming = link.read();
         
         if (incoming.commandId == 1) {
             digitalWrite(LED_BUILTIN, HIGH);
         }
         
-        link.flush(); // Clear flag for next packet
     }
 
     // Send sensor data every 2s
     static uint32_t lastSend = 0;
     if (millis() - lastSend > 2000) {
         MyData status = { millis(), 24.5f, 0 };
-        link.sendData(TYPE_DATA, status);
+        link.sendData(static_cast<uint8_t>('D'), status);
         lastSend = millis();
     }
 }

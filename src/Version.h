@@ -16,7 +16,7 @@
 #define TINYLINK_VERSION_MAJOR 0
 
 /** @brief Minor component of the TinyLink library release version. */
-#define TINYLINK_VERSION_MINOR 4
+#define TINYLINK_VERSION_MINOR 5
 
 /** @brief Patch component of the TinyLink library release version. */
 #define TINYLINK_VERSION_PATCH 0

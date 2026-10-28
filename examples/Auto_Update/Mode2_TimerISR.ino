@@ -24,7 +24,7 @@
 
 #include <TinyLink.h>
 #include <adapters/TinyArduinoAdapter.h>
-#include <TimerOne.h>          // Install via Library Manager
+          // Install via Library Manager
 #include "SharedData.h"
 
 using namespace tinylink;
@@ -46,14 +46,10 @@ void setup() {
     Serial.begin(9600);
     link.onDataReceived(onReceive);
 
-    // Attach the static ISR function to Timer1 (fires every 1 000 µs = 1 ms).
-    // No enableAutoUpdate() required — the constructor already registered this
-    // instance.
-    Timer1.initialize(1000);
-    Timer1.attachInterrupt(TinyLink<SensorData, TinyArduinoAdapter>::autoUpdateISR);
 }
 
 void loop() {
+    link.update();
     // update() is NOT called here — the timer ISR handles it automatically.
 
     static uint32_t lastSend = 0;
