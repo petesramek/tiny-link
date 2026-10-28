@@ -19,7 +19,7 @@ The tests reuse production codecs, avoid access to private implementation detail
 
 Some loop-based tests could improve failure diagnostics by reporting the input value or length that caused an assertion to fail.
 
-`TinyPosixAdapter.h` has no test coverage, despite being explicitly included in the prompt.
+`TinyPosixAdapter.h` had no test coverage, despite being explicitly included in the prompt. It is now covered by `test/test_adapter_posix`, which uses Linux pseudo-terminals and runs in the Linux native CI job; on Windows hosts it compiles to a single ignored test.
 
 ## Personal assessment
 
