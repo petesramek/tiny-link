@@ -6,8 +6,8 @@
  * descriptor. Construction leaves the adapter closed when any required setup
  * step fails.
  *
- * Write methods return TinyWriteResult with the byte count reported by POSIX
- * write().
+ * POSIX write() results are exposed to TinyLink. Partial writes are not retried
+ * by this adapter.
  */
 #ifndef TINYLINK_ADAPTERS_TINYPOSIXADAPTER_H
 #define TINYLINK_ADAPTERS_TINYPOSIXADAPTER_H
@@ -25,7 +25,8 @@
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
-#include "../TinyWriteResult.h"
+
+#include "adapters/WriteResult.h"
 
 namespace tinylink {
 
@@ -164,54 +165,59 @@ public:
     /**
      * @brief Write one byte to the serial device.
      *
-     * The accepted byte count from POSIX write() is returned.
+     * @return Complete, partial, or failed result reported by POSIX.
      *
      * @param value Byte to write.
      */
-    inline TinyWriteResult write(uint8_t value)
+    inline WriteResult write(uint8_t value)
     {
         if (!isOpen()) {
-            return tiny_write_result(1, 0, false);
+            return WriteResult::failure();
         }
 
-        const ssize_t written = ::write(
+        const ssize_t bytesWritten = ::write(
             _fileDescriptor,
             &value,
             1);
-        const bool succeeded = written >= 0;
-        return tiny_write_result(
-            1, succeeded ? static_cast<size_t>(written) : 0, succeeded);
+        return bytesWritten < 0
+            ? WriteResult::failure()
+            : WriteResult::fromCount(
+                1,
+                static_cast<size_t>(bytesWritten));
     }
 
     /**
      * @brief Write a byte sequence to the serial device.
      *
-     * Because the descriptor is non-blocking, a partial result is possible.
-     * A zero-length request does not call POSIX write(). A null pointer is
-     * valid only when @p length is zero.
+     * Because the descriptor is non-blocking, the returned result may be
+     * partial. The adapter does not retry. A null pointer is valid only when
+     * @p length is zero.
      *
      * @param data Bytes to write, or nullptr when @p length is zero.
      * @param length Number of bytes to write.
+     * @return Outcome and accepted byte count.
      */
-    inline TinyWriteResult write(
+    inline WriteResult write(
         const uint8_t* data,
         size_t length)
     {
         if (length == 0) {
-            return tiny_write_result(0, 0, true);
+            return WriteResult::fromCount(0, 0);
         }
 
         if (!isOpen() || !data) {
-            return tiny_write_result(length, 0, false);
+            return WriteResult::failure();
         }
 
-        const ssize_t written = ::write(
+        const ssize_t bytesWritten = ::write(
             _fileDescriptor,
             data,
             length);
-        const bool succeeded = written >= 0;
-        return tiny_write_result(
-            length, succeeded ? static_cast<size_t>(written) : 0, succeeded);
+        return bytesWritten < 0
+            ? WriteResult::failure()
+            : WriteResult::fromCount(
+                length,
+                static_cast<size_t>(bytesWritten));
     }
 
     /**

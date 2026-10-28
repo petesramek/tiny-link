@@ -6,8 +6,8 @@
  * the ESP-IDF UART driver. The application remains responsible for the UART
  * driver's configuration and lifetime.
  *
- * Write methods return TinyWriteResult using the accepted byte count reported
- * by uart_write_bytes().
+ * Return values from uart_write_bytes() are exposed as TinyLink write results.
+ * Partial writes are not retried by this adapter.
  */
 #ifndef TINYLINK_ADAPTERS_TINYESPIDFADAPTER_H
 #define TINYLINK_ADAPTERS_TINYESPIDFADAPTER_H
@@ -20,7 +20,8 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "../TinyWriteResult.h"
+
+#include "adapters/WriteResult.h"
 
 namespace tinylink {
 
@@ -115,57 +116,56 @@ public:
     /**
      * @brief Queue one byte for transmission.
      *
-     * The accepted byte count from uart_write_bytes() is returned.
+     * @return Complete or failed result reported by ESP-IDF.
      *
      * @param value Byte to write.
      */
-    inline TinyWriteResult write(uint8_t value)
+    inline WriteResult write(uint8_t value)
     {
         if (!isOpen()) {
-            return tiny_write_result(1, 0, false);
+            return WriteResult::failure();
         }
 
-        const int written = uart_write_bytes(
+        const int bytesWritten = uart_write_bytes(
             _uartPort,
             reinterpret_cast<const char*>(&value),
             1);
-        const bool succeeded = written >= 0;
-        return tiny_write_result(
-            1, succeeded ? static_cast<size_t>(written) : 0, succeeded);
+        return bytesWritten < 0
+            ? WriteResult::failure()
+            : WriteResult::fromCount(1, static_cast<size_t>(bytesWritten));
     }
 
     /**
      * @brief Queue a byte sequence for transmission.
      *
-     * A zero-length request does not call uart_write_bytes(). A null data
-     * pointer is valid only when @p length is zero.
+     * Partial writes are returned without retrying. A null data pointer is
+     * valid only when @p length is zero.
      *
      * @param data Bytes to write, or nullptr when @p length is zero.
      * @param length Number of bytes to write.
+     * @return Outcome and accepted byte count.
      */
-    inline TinyWriteResult write(
+    inline WriteResult write(
         const uint8_t* data,
         size_t length)
     {
         if (length == 0) {
-            return tiny_write_result(0, 0, true);
+            return WriteResult::fromCount(0, 0);
         }
 
-        if (!data || length > static_cast<size_t>(INT_MAX)) {
-            return tiny_write_result(length, 0, false);
+        if (!isOpen() || !data || length > static_cast<size_t>(INT_MAX)) {
+            return WriteResult::failure();
         }
 
-        if (!isOpen()) {
-            return tiny_write_result(length, 0, false);
-        }
-
-        const int written = uart_write_bytes(
+        const int bytesWritten = uart_write_bytes(
             _uartPort,
             reinterpret_cast<const char*>(data),
             length);
-        const bool succeeded = written >= 0;
-        return tiny_write_result(
-            length, succeeded ? static_cast<size_t>(written) : 0, succeeded);
+        return bytesWritten < 0
+            ? WriteResult::failure()
+            : WriteResult::fromCount(
+                length,
+                static_cast<size_t>(bytesWritten));
     }
 
     /**

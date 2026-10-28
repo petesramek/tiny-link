@@ -21,22 +21,6 @@
 
 - **Multi-Platform**: Native adapters for **Arduino**, **Linux (POSIX)**, **Windows (Win32)**, **ESP-IDF**, and **STM32 HAL**.
 
-## Adapter write results
-
-Every built-in adapter's `write()` methods return `tinylink::TinyWriteResult`, with a
-`TinyWriteStatus` of `Complete`, `Partial`, `Failed`, or `ZeroLength` and a `bytesWritten`
-count. A zero-length request is reported separately and does not call the platform writer;
-partial results preserve the number of bytes accepted. Existing calls that ignore the return
-value continue to compile, while custom adapters and overrides must update their write methods'
-return type.
-
-TinyLink send methods report whether the complete delimited frame was accepted. Incomplete writes
-are not resumed: `sendData()` returns false without consuming its sequence or entering
-the awaiting-ACK state, and `begin()` returns false while remaining in `Connecting` so the
-handshake can retry. Because bytes from a partial frame may already be on the wire, do not retry
-on that stream until it is synchronized again: recover/reopen and flush the transport endpoints, or let the
-receiver's inter-byte timeout discard the incomplete frame before sending another one.
-
 ---
 
 ## 🛠 Installation
@@ -265,10 +249,9 @@ void onReceive(const SensorMessage& data) {
 }
 ```
 
-`sendAck()` returns `false` until a valid application data frame has been
-accepted. Its received sequence remains available after callback delivery and
-after polling code calls `read()` or `flush()`. Calling `begin()`,
-`reset()`, or accepting a new handshake invalidates that sequence.
+`begin()` returns `true` only when the first handshake request was fully written; on `false`
+the link remains connecting and retries from `update()`. All send methods return `false` on
+failed or partial output, without consuming a sequence number or entering `AWAITING_ACK`.
 
 ### Three Update Modes, Side by Side
 
@@ -293,9 +276,31 @@ Serial.print("Checksum Errors: "); Serial.println(stats.checksumMismatches);
 Serial.print("ACK Timeouts: "); Serial.println(stats.ackTimeouts);
 ```
 
-The engine records telemetry through `Stats::increment(TelemetryEvent)`.
-Counters saturate at `UINT32_MAX` rather than wrapping, and `Stats::merge()`
-uses the same saturating behavior.
+## Adapter Write Results
+
+Built-in adapter `write()` overloads return `tinylink::WriteResult`, with a
+`WriteStatus` and the number of bytes accepted by the platform. The status is
+`Complete`, `Partial`, `Failed`, or `ZeroLength`. Adapters do not retry partial
+writes. Applications implementing a custom adapter must return this result
+from both the single-byte and buffer `write()` overloads, and must not treat a
+partial frame as complete.
+
+## Connection lifecycle and transport loss
+
+`update()` detects a closed adapter and moves the link to
+`ConnectionState::Failed`. The link clears any partial receive frame, pending
+outgoing ACK expectation, and received-sequence ACK eligibility. It does not
+retransmit an application frame that was already sent or reset the next
+transmit sequence. An application payload already delivered to polling code
+remains available to `read()` or `flush()`.
+
+When the adapter is open again, a link started with `begin()` returns to
+`ConnectionState::Connecting` and sends a fresh handshake request; the existing
+handshake retry interval applies if the request cannot be written or the peer
+does not respond. A link that was synchronized by a peer handshake without
+calling `begin()` returns to `ConnectionState::Inactive` and waits for a new
+peer handshake request (or an application call to `begin()`). Transport loss
+is recoverable; monitor `connectionState()` or `connected()` to observe it.
 
 ## 📂 Project Structure
 
@@ -307,7 +312,7 @@ uses the same saturating behavior.
 
 `examples/`: Ready-to-run duplex, callback, and health-monitoring demos.
 
-`test/`: Native C++ unit tests using Unity.
+`test/`: Native C++ unit tests using Unity. Run with `pio test -e native` (built with `-Wall -Wextra -Werror -pedantic`); `pio test -e native_sanitized` adds ASan/UBSan (needs sanitizer runtimes; run in CI).
 
 ## 🔄 Migration Guide
 
@@ -380,7 +385,7 @@ Run the native unit suite and the dedicated payload compile-contract checks:
 
 ```sh
 pio test -e native
-python scripts/check_payload_compile_contract.py
+python tools/compile_contract/check.py
 ```
 
 The compile-contract check uses a native GNU or Clang C++11 compiler. It verifies that a valid

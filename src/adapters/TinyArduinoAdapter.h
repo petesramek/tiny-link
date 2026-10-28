@@ -10,8 +10,8 @@
  * Consequently, isOpen() reports that the adapter is bound to its required
  * Stream instance; it does not verify physical transport connectivity.
  *
- * Write methods return TinyWriteResult so callers can inspect the byte count
- * reported by Stream::write().
+ * Stream::write() byte counts are exposed as TinyLink write results. Partial
+ * writes are not retried by this adapter.
  */
 #ifndef TINYLINK_ADAPTERS_TINYARDUINOADAPTER_H
 #define TINYLINK_ADAPTERS_TINYARDUINOADAPTER_H
@@ -22,7 +22,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "../TinyWriteResult.h"
+
+#include "adapters/WriteResult.h"
 
 namespace tinylink {
 
@@ -84,39 +85,38 @@ public:
     /**
      * @brief Write one byte to the underlying Stream.
      *
-     * The Stream::write() byte count is returned as a TinyWriteResult.
+     * @return Complete, partial, or failed result from Stream::write().
      *
      * @param value Byte to write.
      */
-    inline TinyWriteResult write(uint8_t value)
+    inline WriteResult write(uint8_t value)
     {
-        const size_t written = _port.write(value);
-        return tiny_write_result(1, written, written == 1);
+        return WriteResult::fromCount(1, _port.write(value));
     }
 
     /**
      * @brief Write a byte sequence to the underlying Stream.
      *
-     * A zero-length request does not call Stream::write(). A null data pointer
-     * is valid only when @p length is zero.
+     * A null data pointer is valid only when @p length is zero. Partial writes
+     * are returned without retrying.
      *
      * @param data Bytes to write, or nullptr when @p length is zero.
      * @param length Number of bytes to write.
+     * @return Outcome and accepted byte count.
      */
-    inline TinyWriteResult write(
+    inline WriteResult write(
         const uint8_t* data,
         size_t length)
     {
         if (length == 0) {
-            return tiny_write_result(0, 0, true);
+            return WriteResult::fromCount(0, 0);
         }
 
         if (!data) {
-            return tiny_write_result(length, 0, false);
+            return WriteResult::failure();
         }
 
-        const size_t written = _port.write(data, length);
-        return tiny_write_result(length, written, written == length);
+        return WriteResult::fromCount(length, _port.write(data, length));
     }
 
     /**

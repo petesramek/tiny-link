@@ -22,11 +22,25 @@ jobs:
       - name: Run Native Unit Tests
         run: pio test -e native
 
-      - name: Run Native Unit Tests with Address and Undefined Behavior Sanitizers
-        run: pio test -e native_sanitized
+      - name: Check Payload Compile Contract
+        run: python tools/compile_contract/check.py
 
-      - name: Check Payload Compile Contracts
-        run: python scripts/check_payload_compile_contract.py
+  test_sanitized:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Run Native Tests (ASan + UBSan)
+        run: pio test -e native_sanitized
 
   compile_check:
     runs-on: ubuntu-latest

@@ -8,6 +8,11 @@
  * the same representation, including padding, byte order, alignment, enum
  * representation, and ABI. Applications requiring cross-platform payloads
  * must encode and decode fields explicitly.
+ *
+ * The payload type must be trivially copyable, enforced at compile time on
+ * every toolchain including AVR. That is only a minimum object-safety
+ * requirement for copying the object representation with memcpy(); it does
+ * not make the bytes portable between differing peers.
  */
 #ifndef TINYLINK_H
 #define TINYLINK_H
@@ -22,12 +27,12 @@
 #endif
 
 #include "Version.h"
+#include "adapters/WriteResult.h"
 #include "internal/codec/CobsCodec.h"
 #include "internal/codec/Packet.h"
 #include "internal/protocol/AckMessage.h"
 #include "internal/protocol/HandshakeMessage.h"
 #include "internal/protocol/LogMessage.h"
-#include "TinyWriteResult.h"
 #include "protocol/AckResult.h"
 #include "protocol/LogLevel.h"
 #include "protocol/MessageType.h"
@@ -36,18 +41,20 @@
 
 namespace tinylink {
 
-    namespace detail {
+/**
+ * @brief True when T may have its object representation copied with memcpy().
+ *
+ * avr-libc toolchains lack <type_traits>, so the equivalent compiler intrinsic
+ * is used there; the requirement is identical on every platform.
+ */
+template <typename T>
+struct is_payload_copyable {
 #ifdef __AVR__
-        // The AVR toolchain's libstdc++ does not provide <type_traits>.
-        template <typename T>
-        struct is_trivially_copyable {
-            static const bool value = __is_trivially_copyable(T);
-        };
+    static const bool value = __is_trivially_copyable(T);
 #else
-        template <typename T>
-        struct is_trivially_copyable : std::is_trivially_copyable<T> {};
+    static const bool value = std::is_trivially_copyable<T>::value;
 #endif
-    }
+};
 
 #ifndef __AVR__
 /** @brief Compile-time validation of the TinyLink transport adapter contract. */
@@ -59,14 +66,19 @@ private:
         static_cast<void>(static_cast<bool>(std::declval<Candidate>().isOpen())),
         static_cast<void>(static_cast<int>(std::declval<Candidate>().available())),
         static_cast<void>(static_cast<int>(std::declval<Candidate>().read())),
-        static_cast<void>(static_cast<TinyWriteResult>(
-            std::declval<Candidate>().write(uint8_t(0)))),
-        static_cast<void>(static_cast<TinyWriteResult>(
-            std::declval<Candidate>().write(
-                static_cast<const uint8_t*>(nullptr), size_t(0)))),
+        static_cast<void>(std::declval<Candidate>().write(uint8_t(0))),
+        static_cast<void>(std::declval<Candidate>().write(
+            static_cast<const uint8_t*>(nullptr), size_t(0))),
         static_cast<void>(static_cast<unsigned long>(
             std::declval<Candidate>().millis())),
-        std::true_type());
+        std::integral_constant<bool,
+        std::is_same<
+            decltype(std::declval<Candidate&>().write(uint8_t(0))),
+            WriteResult>::value &&
+        std::is_same<
+            decltype(std::declval<Candidate&>().write(
+                static_cast<const uint8_t*>(nullptr), size_t(0))),
+            WriteResult>::value>());
 
     template <typename>
     static std::false_type check(...);
@@ -86,16 +98,16 @@ using adapter_check_t = int;
 /**
  * @brief TinyLink protocol engine.
  *
- * @tparam T Local application payload representation. sizeof(T) must not
- * exceed the protocol payload limit. TinyLink copies its object bytes without
- * imposing a portable field serialization.
+ * @tparam T Local application payload representation: an opaque byte
+ * sequence to TinyLink. It must be trivially copyable (a minimum object-safety
+ * requirement, not a portability guarantee) and sizeof(T) must not exceed the
+ * protocol payload limit. TinyLink copies its object bytes without imposing a
+ * portable field serialization; use explicit serialization when peers may
+ * differ in padding, endianness, alignment, enum representation, or ABI.
  * @tparam Adapter Transport adapter satisfying the documented adapter API.
  */
 template <typename T, typename Adapter, adapter_check_t<Adapter> = 0>
 class TinyLink {
-    static_assert(detail::is_trivially_copyable<T>::value,
-                  "TinyLink: Payload must be trivially copyable.");
-
 public:
     /** @brief Application payload callback. */
     typedef void (*DataCallback)(const T& data);
@@ -110,6 +122,8 @@ public:
     typedef void (*AckCallback)(uint8_t sequence, AckResult result);
 
 private:
+    static_assert(is_payload_copyable<T>::value,
+                  "TinyLink payload type must be trivially copyable");
     static_assert(sizeof(T) <= packet::PACKET_MAX_PAYLOAD_SIZE,
                   "TinyLink application payload exceeds 64 bytes");
 
@@ -131,7 +145,7 @@ private:
     uint8_t _nextTransmitSequence;
     uint8_t _pendingTransmitSequence;
     uint8_t _lastReceivedSequence;
-    bool _hasReceivedSequence; /**< Whether the last application sequence is valid for ACK. */
+    bool _hasReceivedSequence;
     unsigned long _lastHandshakeSent;
     unsigned long _lastTransmit;
     unsigned long _lastReceiveByte;
@@ -140,15 +154,22 @@ private:
     size_t _encodedReceiveLength;
     T _mailbox;
     bool _hasNew;
+    bool _outputDirty;
+
+    friend struct TinyLinkStatsAccess;
 
     TinyLink(const TinyLink&) = delete;
     TinyLink& operator=(const TinyLink&) = delete;
 
-#ifdef TINYLINK_NATIVE_TEST
-    friend struct TinyLinkTestAccess;
-#endif
-
-    /** @brief Write a complete framed packet to the adapter. */
+    /**
+     * @brief Write a complete framed packet to the adapter.
+     *
+     * Succeeds only when both the encoded body and the delimiter were fully
+     * accepted. A partial body or a failed delimiter leaves an unterminated
+     * fragment on the wire; it cannot be resumed, so the call fails and the
+     * next write first emits a delimiter to terminate the fragment. The peer
+     * discards the fragment as an invalid frame.
+     */
     bool write_frame(uint8_t type, uint8_t sequence,
                      const uint8_t* payload, size_t payloadLength)
     {
@@ -166,7 +187,7 @@ private:
             return false;
         }
 
-        uint8_t encoded[MAX_ENCODED_SIZE + 1u] = {};
+        uint8_t encoded[MAX_ENCODED_SIZE] = {};
         const codec::CobsResult cobs = codec::cobs_encode(
             plain, packed.length, encoded, sizeof(encoded));
 
@@ -175,11 +196,29 @@ private:
             return false;
         }
 
-        encoded[cobs.bytesWritten] = 0;
-        const size_t frameLength = cobs.bytesWritten + 1u;
-        const TinyWriteResult written = _adapter->write(encoded, frameLength);
-        return written.status == TinyWriteStatus::Complete &&
-            written.bytesWritten == frameLength;
+        // A previously interrupted frame left unterminated bytes on the wire.
+        // Partial writes cannot be resumed, so close the stale bytes with a
+        // delimiter first; the peer discards them as one invalid frame.
+        if (_outputDirty) {
+            if (!_adapter->write(uint8_t(0)).complete()) {
+                return false;
+            }
+            _outputDirty = false;
+        }
+
+        const WriteResult body = _adapter->write(encoded, cobs.bytesWritten);
+        if (!body.complete()) {
+            // Failed wrote nothing; Partial left an unterminated fragment.
+            _outputDirty = body.status == WriteStatus::Partial;
+            return false;
+        }
+
+        if (!_adapter->write(uint8_t(0)).complete()) {
+            _outputDirty = true;
+            return false;
+        }
+
+        return true;
     }
 
     /** @brief Send a handshake request or response. */
@@ -264,16 +303,23 @@ private:
             _stats.increment(TelemetryEvent::InvalidHandshake);
             if (status == HandshakeMessageCodecStatus::UnsupportedVersion) {
                 _connectionState = ConnectionState::Incompatible;
+                _hasReceivedSequence = false;
             }
             return;
         }
 
-        _hasReceivedSequence = false;
+        if (message.kind == HandshakeKind::Request) {
+            // A peer restarting its handshake makes the old frame stale.
+            _hasReceivedSequence = false;
+        }
+
         if (_onHandshakeReceived) {
             _onHandshakeReceived(message);
         }
 
         if (message.kind == HandshakeKind::Request) {
+            // Connect only once the response is out; otherwise the peer's
+            // retried request gets another chance.
             if (send_handshake(HandshakeKind::Response)) {
                 _connectionState = ConnectionState::Connected;
             }
@@ -301,53 +347,6 @@ private:
             _stats.increment(TelemetryEvent::UnexpectedSequence);
             return;
         }
-
-        _transmitState = TransmitState::Ready;
-
-        if (_onAckReceived) {
-            _onAckReceived(sequence, result);
-        }
-    }
-
-    /** @brief Handle an application frame after reserved-type routing. */
-    void handle_application(uint8_t sequence,
-                            const uint8_t* payload,
-                            size_t payloadLength)
-    {
-        if (!is_connected(_connectionState)) {
-            ++_stats.unexpectedMessageTypes;
-            return;
-        }
-
-        if (payloadLength != sizeof(T)) {
-            ++_stats.payloadSizeMismatches;
-            return;
-        }
-
-        memcpy(&_mailbox, payload, sizeof(T));
-        _lastReceivedSequence = sequence;
-        _hasNew = true;
-        ++_stats.packetsReceived;
-
-        if (_onDataReceived) {
-            _onDataReceived(_mailbox);
-        }
-    }
-
-    /** @brief Decode and dispatch one accumulated COBS block. */
-    void finish_frame()
-    {
-        if (_encodedReceiveLength == 0) {
-            _receiveState = ReceiveState::WaitingForFrame;
-            return;
-        }
-
-        uint8_t plain[MAX_PLAIN_SIZE] = {};
-        const codec::CobsResult decoded = codec::cobs_decode(
-            _encodedReceive,
-            _encodedReceiveLength,
-            plain,
-            sizeof(plain));
 
         _transmitState = TransmitState::Ready;
 
@@ -479,7 +478,8 @@ public:
           _encodedReceive(),
           _encodedReceiveLength(0),
           _mailbox(),
-          _hasNew(false)
+          _hasNew(false),
+          _outputDirty(false)
     {}
 
     /** @brief Register an application payload callback. */
@@ -502,14 +502,16 @@ public:
 
     /**
      * @brief Start protocol-version handshake negotiation.
-     * @return True if the complete request frame was accepted by the adapter.
-     *         False if the transport is closed or output was incomplete.
+     *
+     * @return true if the first handshake request was completely written.
+     * On false the engine is still Connecting and update() retries the
+     * request at the handshake retry interval.
      */
     bool begin()
     {
-        _hasReceivedSequence = false;
         _handshakeEnabled = true;
         _connectionState = ConnectionState::Connecting;
+        _hasReceivedSequence = false;
         return send_handshake(HandshakeKind::Request);
     }
 
@@ -535,7 +537,29 @@ public:
             return;
         }
 
+        if (!_adapter->isOpen()) {
+            if (_connectionState != ConnectionState::Failed) {
+                _connectionState = ConnectionState::Failed;
+                _receiveState = ReceiveState::WaitingForFrame;
+                _encodedReceiveLength = 0;
+                _transmitState = TransmitState::Ready;
+                _pendingTransmitSequence = 0;
+                _hasReceivedSequence = false;
+            }
+            return;
+        }
+
         const unsigned long now = _adapter->millis();
+
+        if (_connectionState == ConnectionState::Failed) {
+            if (_handshakeEnabled) {
+                _connectionState = ConnectionState::Connecting;
+                _lastHandshakeSent = now;
+                send_handshake(HandshakeKind::Request);
+            } else {
+                _connectionState = ConnectionState::Inactive;
+            }
+        }
 
         if (_handshakeEnabled &&
             _connectionState == ConnectionState::Connecting &&
@@ -599,10 +623,6 @@ public:
     /**
      * @brief Send one application payload and await its correlated ACK.
      *
-     * Incomplete frames are not resumed. A failed or partial write returns
-     * false without consuming a transmit sequence or entering AwaitingAck.
-     * Resynchronize the transport before attempting another frame.
-     *
      * Reserved internal message-type bytes are rejected. The object bytes are
      * sent unchanged and therefore require an application-defined portability
      * contract when peers use different platforms or ABIs.
@@ -613,6 +633,7 @@ public:
             return false;
         }
 
+        // The sequence is consumed only after the whole frame was written.
         const uint8_t sequence = _nextTransmitSequence;
         if (!write_frame(
                 type,
@@ -622,14 +643,22 @@ public:
             return false;
         }
 
-        _nextTransmitSequence = static_cast<uint8_t>(sequence + 1u);
+        ++_nextTransmitSequence;
         _pendingTransmitSequence = sequence;
         _lastTransmit = _adapter->millis();
         _transmitState = TransmitState::AwaitingAck;
         return true;
     }
 
-    /** @brief Acknowledge the most recently accepted application frame. */
+    /**
+     * @brief Acknowledge the most recently accepted application frame.
+     *
+     * Returns false without writing until an application frame has been
+     * accepted. The acknowledged sequence stays valid across callback
+     * delivery, read() and flush(). It is invalidated by construction,
+     * reset(), begin(), a peer handshake request (peer restart) and an
+     * unsupported handshake version (Incompatible).
+     */
     bool sendAck(AckResult result = AckResult::Ok)
     {
         if (!_hasReceivedSequence) {
@@ -649,11 +678,7 @@ public:
             sizeof(payload));
     }
 
-    /**
-     * @brief Send an explicitly encoded structured log frame.
-     *
-     * A failed or partial write does not consume a transmit sequence.
-     */
+    /** @brief Send an explicitly encoded structured log frame. */
     bool sendLog(LogLevel level, uint16_t code, const char* text)
     {
         LogMessage message = {};
@@ -669,16 +694,15 @@ public:
             return false;
         }
 
-        const uint8_t sequence = _nextTransmitSequence;
         if (!write_frame(
-            message_type_to_wire(MessageType::Log),
-            sequence,
-            payload,
-            sizeof(payload))) {
+                message_type_to_wire(MessageType::Log),
+                _nextTransmitSequence,
+                payload,
+                sizeof(payload))) {
             return false;
         }
 
-        _nextTransmitSequence = static_cast<uint8_t>(sequence + 1u);
+        ++_nextTransmitSequence;
         return true;
     }
 };
