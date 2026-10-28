@@ -17,7 +17,7 @@ The `TinyLink.h` suite covers state transitions, ACK correlation, timeouts, malf
 
 The tests reuse production codecs, avoid access to private implementation details, and do not modify production code.
 
-Some loop-based tests could improve failure diagnostics by reporting the input value or length that caused an assertion to fail.
+Loop-based assertions now report the failing input, index, or length (see "Failure diagnostics" below).
 
 `TinyPosixAdapter.h` had no test coverage, despite being explicitly included in the prompt. It is now covered by `test/suites/test_adapters_posix`, which uses Linux pseudo-terminals and runs in the Linux native CI job; on Windows hosts it compiles to a single ignored test.
 
@@ -49,6 +49,33 @@ I would expect those to be applied by default without explicit definition as a s
 Test-only support code lives in `test/support`: `tinylink/` (fake adapter, frame helpers, shared fixture header) and `stubs/<platform>/` (Arduino, ESP-IDF, STM32 HAL, Windows SDK stand-ins, added to the include path in `platformio.ini`).
 
 On Windows hosts `test_adapters_posix` registers a single ignored test; the 17 PTY tests run only on Linux.
+
+## Test infrastructure reference
+
+### Shared helpers (`test/support/tinylink`)
+
+- `FakeAdapter.h`: deterministic in-memory adapter (inbound queue, captured output, manual clock, scripted partial/failed writes, `setOpen`). Input and output are each capped at 8192 bytes; `scriptWrites` holds 8 entries.
+- `TinyLinkTestHelpers.h`: `queuePacket`/`queueApplication`/`queueHandshake`/`queueAck` build inbound frames with the production COBS and packet codecs (never hand-encoded); `writtenFrameCount`/`decodeWrittenFrame` decode what the engine wrote.
+- `TinyLinkTestFixture.h` (+ `test_engine_tinylink/TinyLinkTestFixture.cpp`): `Payload` (4 bytes), `MaximumPayload` (64 bytes), callback recorders (reset with `resetCallbacks()` in `setUp`), `connectPeer`, and a `TinyLinkStatsAccess` friend used to read stats.
+- `TestDiagnostics.h`: `diag(fmt, ...)` formats failure context for `TEST_ASSERT_*_MESSAGE`.
+
+### Failure diagnostics
+
+Assertions inside loops must say which input failed. Use the `_MESSAGE` variants with `tinylink_test::diag`, naming the index, length, or value under test, e.g. `TEST_ASSERT_EQUAL_UINT16_MESSAGE(expected, actual, diag("input length=%u", (unsigned)length))`. `diag` returns a single static buffer overwritten on the next call, so use it inline or store the pointer only until the next `diag` call. When a loop makes several assertions about one case, build the context once at the top of the iteration.
+
+### Platform stubs (`test/support/stubs/<platform>`)
+
+Minimal stand-ins for the Arduino, ESP-IDF UART, STM32 HAL, and Windows serial APIs, added to the include path in `platformio.ini`. They are scripted through file-scope variables and are not SDK replacements: they model only what the adapters call, never real timing, buffering, or errors beyond what a test sets. State is not reset automatically (the Windows stub provides `tinylink_reset_windows_stub()`), so reset it per test.
+
+### Compile-contract probes (`tools/compile_contract`)
+
+Unity cannot assert that code fails to compile, so `python tools/compile_contract/check.py [compiler]` (default `g++`, `-std=gnu++11 -fsyntax-only`) compiles each probe: `payload_valid.cpp` must compile; `payload_not_trivially_copyable.cpp` must fail with "must be trivially copyable"; `payload_too_large.cpp` must fail with "exceeds 64 bytes". The script exits non-zero if any case deviates.
+
+### Capacity assumptions
+
+- Maximum application payload: 64 bytes (`PACKET_MAX_PAYLOAD_SIZE`); packet = 3-byte header + payload + 2-byte checksum = at most 69 bytes (`PACKET_MAX_SIZE`).
+- COBS adds one byte per 254 bytes plus one, and a frame ends with a `0x00` delimiter, so encode buffers in helpers are `PACKET_MAX_SIZE + PACKET_MAX_SIZE / 254 + 1`.
+- `FakeAdapter` buffers: 8192 bytes each way; tests that queue many frames should `clearInput()`/`clearOutput()`.
 
 ## Prompts and pull requests
 

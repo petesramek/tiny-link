@@ -5,6 +5,15 @@
 #include <stdint.h>
 #include <string.h>
 
+/*
+ * Test-only Win32 serial API stand-in (CreateFile/DCB/COMMTIMEOUTS/ReadFile/
+ * WriteFile subset used by TinyWindowsAdapter). It is an in-memory fake, not a
+ * Windows SDK replacement: no real handles or devices. Scripted state and call
+ * records are file-scope; call tinylink_reset_windows_stub() between tests. It
+ * is placed on the include path as <windows.h>, so it shadows the real SDK
+ * header in this environment only.
+ */
+
 typedef void* HANDLE;
 typedef uint32_t DWORD;
 typedef uint16_t WORD;

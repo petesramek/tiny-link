@@ -5,8 +5,11 @@
 
 #include "protocol/Stats.h"
 #include "protocol/TelemetryEvent.h"
+#include "support/tinylink/TestDiagnostics.h"
 
 namespace {
+
+    using tinylink_test::diag;
 
     struct EventCounter {
         tinylink::TelemetryEvent event;
@@ -49,16 +52,27 @@ namespace {
     {
         tinylink::Stats stats;
         for (size_t i = 0; i < sizeof(eventCounters) / sizeof(eventCounters[0]); ++i) {
-            TEST_ASSERT_EQUAL_UINT8(i, static_cast<uint8_t>(eventCounters[i].event));
-            TEST_ASSERT_EQUAL_STRING(
+            TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+                i, static_cast<uint8_t>(eventCounters[i].event),
+                diag("event=%s index=%u", eventCounters[i].name, (unsigned)i));
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(
                 eventCounters[i].name,
-                tinylink::telemetry_event_to_string(eventCounters[i].event));
-            TEST_ASSERT_TRUE(stats.increment(eventCounters[i].event));
+                tinylink::telemetry_event_to_string(eventCounters[i].event),
+                diag("event index=%u", (unsigned)i));
+            TEST_ASSERT_TRUE_MESSAGE(
+                stats.increment(eventCounters[i].event),
+                diag("increment rejected event=%s index=%u",
+                    eventCounters[i].name, (unsigned)i));
         }
 
         for (size_t i = 0; i < sizeof(eventCounters) / sizeof(eventCounters[0]); ++i) {
-            TEST_ASSERT_EQUAL_UINT32(1, stats.countFor(eventCounters[i].event));
-            TEST_ASSERT_EQUAL_UINT32(1, stats.*(eventCounters[i].counter));
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                1, stats.countFor(eventCounters[i].event),
+                diag("countFor event=%s index=%u", eventCounters[i].name, (unsigned)i));
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                1, stats.*(eventCounters[i].counter),
+                diag("member counter event=%s index=%u",
+                    eventCounters[i].name, (unsigned)i));
         }
     }
 
@@ -78,7 +92,10 @@ namespace {
     {
         tinylink::Stats live;
         for (size_t i = 0; i < sizeof(eventCounters) / sizeof(eventCounters[0]); ++i) {
-            TEST_ASSERT_EQUAL_UINT32(0, live.countFor(eventCounters[i].event));
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                0, live.countFor(eventCounters[i].event),
+                diag("initial count event=%s index=%u",
+                    eventCounters[i].name, (unsigned)i));
         }
 
         live.increment(tinylink::TelemetryEvent::PacketReceived);
@@ -104,12 +121,18 @@ namespace {
 
         left.merge(right);
         for (size_t i = 0; i < sizeof(eventCounters) / sizeof(eventCounters[0]); ++i) {
-            TEST_ASSERT_EQUAL_UINT32(8, left.countFor(eventCounters[i].event));
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                8, left.countFor(eventCounters[i].event),
+                diag("merge 3+5 event=%s index=%u",
+                    eventCounters[i].name, (unsigned)i));
         }
 
         left.merge(left);
         for (size_t i = 0; i < sizeof(eventCounters) / sizeof(eventCounters[0]); ++i) {
-            TEST_ASSERT_EQUAL_UINT32(16, left.countFor(eventCounters[i].event));
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                16, left.countFor(eventCounters[i].event),
+                diag("self-merge 8+8 event=%s index=%u",
+                    eventCounters[i].name, (unsigned)i));
         }
     }
 
@@ -119,9 +142,14 @@ namespace {
         tinylink::Stats addition;
         for (size_t i = 0; i < sizeof(eventCounters) / sizeof(eventCounters[0]); ++i) {
             stats.*(eventCounters[i].counter) = UINT32_MAX;
-            TEST_ASSERT_TRUE(stats.increment(eventCounters[i].event));
-            TEST_ASSERT_EQUAL_UINT32(
-                UINT32_MAX, stats.*(eventCounters[i].counter));
+            TEST_ASSERT_TRUE_MESSAGE(
+                stats.increment(eventCounters[i].event),
+                diag("increment at max rejected event=%s index=%u",
+                    eventCounters[i].name, (unsigned)i));
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                UINT32_MAX, stats.*(eventCounters[i].counter),
+                diag("increment must saturate event=%s index=%u",
+                    eventCounters[i].name, (unsigned)i));
 
             stats.*(eventCounters[i].counter) = UINT32_MAX - 1u;
             addition.*(eventCounters[i].counter) = 2;
@@ -129,8 +157,10 @@ namespace {
 
         stats.merge(addition);
         for (size_t i = 0; i < sizeof(eventCounters) / sizeof(eventCounters[0]); ++i) {
-            TEST_ASSERT_EQUAL_UINT32(
-                UINT32_MAX, stats.*(eventCounters[i].counter));
+            TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                UINT32_MAX, stats.*(eventCounters[i].counter),
+                diag("merge (UINT32_MAX-1)+2 must saturate event=%s index=%u",
+                    eventCounters[i].name, (unsigned)i));
         }
     }
 

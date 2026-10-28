@@ -33,7 +33,10 @@ void testReservedApplicationTypesAreRejectedWithoutConsumingSequence()
         };
 
         for (size_t i = 0; i < sizeof(reserved); ++i) {
-            TEST_ASSERT_FALSE(link.sendData(reserved[i], payload));
+            TEST_ASSERT_FALSE_MESSAGE(
+                link.sendData(reserved[i], payload),
+                tinylink_test::diag("reserved type 0x%02X ('%c') accepted by sendData",
+                    (unsigned)reserved[i], (char)reserved[i]));
         }
         TEST_ASSERT_EQUAL_UINT32(0, tinylink_test::writtenFrameCount(adapter));
 
@@ -69,7 +72,9 @@ void testMaximumSupportedApplicationPayloadCanBeSentAndReceived()
         TEST_ASSERT_TRUE(tinylink_test::decodeWrittenFrame(
             adapter, 0, type, sequence, decoded, sizeof(decoded), length));
         TEST_ASSERT_EQUAL_UINT32(sizeof(payload), length);
-        TEST_ASSERT_EQUAL_UINT8_ARRAY(payload.bytes, decoded, sizeof(payload.bytes));
+        TEST_ASSERT_EQUAL_UINT8_ARRAY_MESSAGE(
+            payload.bytes, decoded, sizeof(payload.bytes),
+            "maximum payload bytes differ after send");
 
         TEST_ASSERT_TRUE(tinylink_test::queueAck(
             adapter, sequence, tinylink::AckResult::Ok));

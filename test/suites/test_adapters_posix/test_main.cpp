@@ -36,6 +36,8 @@ int main()
 #include <type_traits>
 #include <vector>
 
+#include "support/tinylink/TestDiagnostics.h"
+
 #include <errno.h>
 #include <fcntl.h>
 #include <termios.h>
@@ -153,11 +155,15 @@ namespace {
         };
         for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); ++i) {
             TinyPosixAdapter adapter(paths[i]);
-            TEST_ASSERT_FALSE(adapter.isOpen());
-            TEST_ASSERT_EQUAL_INT(0, adapter.available());
-            TEST_ASSERT_EQUAL_INT(-1, adapter.read());
-            TEST_ASSERT_EQUAL_INT(WriteStatus::Failed, statusOf(adapter.write(0x41)));
-            TEST_ASSERT_EQUAL_INT(before, lowestFreeDescriptor());
+            const char* context = tinylink_test::diag(
+                "unopenable path index=%u path=%s",
+                (unsigned)i, paths[i] ? paths[i] : "(null)");
+            TEST_ASSERT_FALSE_MESSAGE(adapter.isOpen(), context);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(0, adapter.available(), context);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(-1, adapter.read(), context);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(
+                WriteStatus::Failed, statusOf(adapter.write(0x41)), context);
+            TEST_ASSERT_EQUAL_INT_MESSAGE(before, lowestFreeDescriptor(), context);
         }
     }
 
@@ -282,9 +288,14 @@ namespace {
         TEST_ASSERT_EQUAL_INT(static_cast<int>(sizeof(input)), adapter.available());
 
         for (size_t i = 0; i < sizeof(input); ++i) {
-            TEST_ASSERT_EQUAL_INT(input[i], adapter.read());
-            TEST_ASSERT_EQUAL_INT(
-                static_cast<int>(sizeof(input) - i - 1), adapter.available());
+            TEST_ASSERT_EQUAL_INT_MESSAGE(
+                input[i], adapter.read(),
+                tinylink_test::diag("byte index=%u of %u",
+                    (unsigned)i, (unsigned)sizeof(input)));
+            TEST_ASSERT_EQUAL_INT_MESSAGE(
+                static_cast<int>(sizeof(input) - i - 1), adapter.available(),
+                tinylink_test::diag("available() after reading byte index=%u of %u",
+                    (unsigned)i, (unsigned)sizeof(input)));
         }
         TEST_ASSERT_EQUAL_INT(-1, adapter.read());
     }

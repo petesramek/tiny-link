@@ -3,6 +3,7 @@
 #include <unity.h>
 
 #include "internal/codec/Fletcher16.h"
+#include "support/tinylink/TestDiagnostics.h"
 
 extern "C" void setUp(void)
 {
@@ -78,9 +79,10 @@ namespace {
             const uint16_t expected = static_cast<uint16_t>(
                 (reduced << 8) | reduced);
 
-            TEST_ASSERT_EQUAL_UINT16(
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(
                 expected,
-                tinylink::codec::fletcher16(&byte, 1));
+                tinylink::codec::fletcher16(&byte, 1),
+                tinylink_test::diag("single byte value=0x%02X", (unsigned)value));
         }
     }
 
@@ -95,9 +97,12 @@ namespace {
 
         for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
             const size_t length = lengths[i];
-            TEST_ASSERT_EQUAL_UINT16(
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(
                 referenceFletcher16(data, length),
-                tinylink::codec::fletcher16(data, length));
+                tinylink::codec::fletcher16(data, length),
+                tinylink_test::diag(
+                    "reduction boundary input length=%u index=%u",
+                    (unsigned)length, (unsigned)i));
         }
     }
 
@@ -114,12 +119,14 @@ namespace {
         for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
             const size_t length = lengths[i];
 
-            TEST_ASSERT_EQUAL_UINT16(
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(
                 referenceFletcher16(zeroes, length),
-                tinylink::codec::fletcher16(zeroes, length));
-            TEST_ASSERT_EQUAL_UINT16(
+                tinylink::codec::fletcher16(zeroes, length),
+                tinylink_test::diag("all-zero input length=%u", (unsigned)length));
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(
                 referenceFletcher16(maximumBytes, length),
-                tinylink::codec::fletcher16(maximumBytes, length));
+                tinylink::codec::fletcher16(maximumBytes, length),
+                tinylink_test::diag("all-0xFF input length=%u", (unsigned)length));
         }
     }
 
@@ -134,14 +141,16 @@ namespace {
         }
 
         for (size_t length = 0; length <= sizeof(data); ++length) {
-            TEST_ASSERT_EQUAL_UINT16(
+            TEST_ASSERT_EQUAL_UINT16_MESSAGE(
                 referenceFletcher16(data, length),
-                tinylink::codec::fletcher16(data, length));
-        }
-    }
+                tinylink::codec::fletcher16(data, length),
+                tinylink_test::diag(
+                    "LCG pattern (seed 0xC001D00D) input length=%u of %u",
+                    (unsigned)length, (unsigned)sizeof(data)));
+                            }
+                        }
 
-} // namespace
-
+                    } // namespace
 int main()
 {
     UNITY_BEGIN();
