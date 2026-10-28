@@ -3,7 +3,7 @@
 
 #include <unity.h>
 
-#include "stm32_hal_stub.h"
+#include "support/stubs/stm32/stm32_hal_stub.h"
 
 #define HAL_UART_MODULE_ENABLED
 #define STM32

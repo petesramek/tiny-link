@@ -19,7 +19,7 @@ The tests reuse production codecs, avoid access to private implementation detail
 
 Some loop-based tests could improve failure diagnostics by reporting the input value or length that caused an assertion to fail.
 
-`TinyPosixAdapter.h` had no test coverage, despite being explicitly included in the prompt. It is now covered by `test/test_adapter_posix`, which uses Linux pseudo-terminals and runs in the Linux native CI job; on Windows hosts it compiles to a single ignored test.
+`TinyPosixAdapter.h` had no test coverage, despite being explicitly included in the prompt. It is now covered by `test/suites/test_adapters_posix`, which uses Linux pseudo-terminals and runs in the Linux native CI job; on Windows hosts it compiles to a single ignored test.
 
 ## Personal assessment
 
@@ -31,6 +31,24 @@ I would expect those to be applied by default without explicit definition as a s
 - None of the generated test code contains documentation comments. Clear test names describe individual cases, but shared helpers and platform stubs should document their purpose, intended use, limitations, and differences from real platform implementations. Without that context, they are easier to misunderstand or misuse.
 - The POSIX adapter was omitted, and the omission was not reported.
 - Some of these expectations were not explicitly defined in the repository guidance. This also identified areas where the contribution standards could be more specific.
+
+## Current test layout
+
+`platformio.ini` sets `test_dir = test/suites`; each `test/suites/test_*` directory is one PlatformIO suite (one Unity runner), discovered exactly once.
+
+| Suite | Production responsibility |
+| --- | --- |
+| `test_adapters_arduino`, `_espidf`, `_posix`, `_stm32`, `_windows` | `src/adapters/Tiny*Adapter.h` |
+| `test_adapters_write_result` | `src/adapters/WriteResult.h` |
+| `test_internal_codec_cobs`, `_fletcher16`, `_packet` | `src/internal/codec` |
+| `test_protocol_messages`, `test_protocol_stats` | `src/protocol`, `src/internal/protocol` |
+| `test_engine_tinylink` | `src/TinyLink.h` |
+
+`test_engine_tinylink` has one `test_main.cpp` runner plus behavior files (`lifecycle_tests.cpp`, `application_tests.cpp`, `ack_sequence_tests.cpp`, `receive_mailbox_tests.cpp`, `timeout_tests.cpp`, `overflow_recovery_tests.cpp`, `logging_tests.cpp`, `telemetry_tests.cpp`) and a shared `TinyLinkTestFixture.cpp`. Each behavior file exposes a `register*Tests()` function called by the runner.
+
+Test-only support code lives in `test/support`: `tinylink/` (fake adapter, frame helpers, shared fixture header) and `stubs/<platform>/` (Arduino, ESP-IDF, STM32 HAL, Windows SDK stand-ins, added to the include path in `platformio.ini`).
+
+On Windows hosts `test_adapters_posix` registers a single ignored test; the 17 PTY tests run only on Linux.
 
 ## Prompts and pull requests
 

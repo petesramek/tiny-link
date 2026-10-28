@@ -1,6 +1,6 @@
 // Must NOT compile: payload with a user-provided copy constructor.
 #include "TinyLink.h"
-#include "test_tinylink/FakeAdapter.h"
+#include "support/tinylink/FakeAdapter.h"
 
 struct InvalidPayload {
     uint8_t value;
