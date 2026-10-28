@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All registered in `test/test_runner.cpp`.
 
 ### Changed
+- `TinyLink<T, Adapter>` now requires payload type `T` to be trivially copyable, enforced with a
+  `static_assert` on every toolchain including AVR (compiler intrinsic where `<type_traits>` is
+  unavailable). Trivially copyable is only a minimum object-safety requirement; raw object memory
+  is still not portable between differing peers, which must serialize explicitly.
+  Added `tinylink::is_payload_copyable<T>` and compile-contract checks in `tools/compile_contract`.
 - `TinyLink::begin()` now returns `bool` (was `void`): `true` only if the first handshake
   request was completely written. On `false` the link stays `Connecting` and `update()` retries.
   Existing callers may ignore the result.

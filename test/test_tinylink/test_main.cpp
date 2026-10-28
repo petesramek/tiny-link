@@ -1308,11 +1308,37 @@ namespace {
         TEST_ASSERT_TRUE(link.connected());
     }
 
+    // Positive compile contracts: valid payloads, including the maximum size.
+    static_assert(tinylink::is_payload_copyable<Payload>::value,
+                  "plain byte-array payload must be accepted");
+    static_assert(tinylink::is_payload_copyable<MaximumPayload>::value,
+                  "maximum-size payload must be accepted");
+    static_assert(sizeof(MaximumPayload) == tinylink::packet::PACKET_MAX_PAYLOAD_SIZE,
+                  "maximum payload must equal the protocol limit");
+
+    struct NonTrivialPayload {
+        uint8_t value;
+        NonTrivialPayload(const NonTrivialPayload& other) : value(other.value) {}
+    };
+    static_assert(!tinylink::is_payload_copyable<NonTrivialPayload>::value,
+                  "non-trivially-copyable payload must be rejected");
+
+    void testPayloadContractAcceptsValidAndMaximumPayloads()
+    {
+        FakeAdapter adapter;
+        tinylink::TinyLink<Payload, FakeAdapter> small(adapter);
+        tinylink::TinyLink<MaximumPayload, FakeAdapter> maximum(adapter);
+        TEST_ASSERT_EQUAL_UINT32(4, sizeof(Payload));
+        TEST_ASSERT_EQUAL_UINT32(tinylink::packet::PACKET_MAX_PAYLOAD_SIZE,
+                                 sizeof(MaximumPayload));
+    }
+
 } // namespace
 
 int main()
 {
     UNITY_BEGIN();
+    RUN_TEST(testPayloadContractAcceptsValidAndMaximumPayloads);
     RUN_TEST(testConstructionStartsInactiveAndReadyWithZeroTelemetry);
     RUN_TEST(testBeginSendsVersionedHandshakeRequestAndEnablesConnectingState);
     RUN_TEST(testHandshakeRequestConnectsAndSendsCompatibleResponse);
