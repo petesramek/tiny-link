@@ -421,7 +421,12 @@ namespace {
         TEST_ASSERT_EQUAL_INT(WriteStatus::Failed, statusOf(result));
         TEST_ASSERT_EQUAL_UINT32(0, result.bytesWritten);
 
-        const WriteResult single = adapter.write(0x01);
+        // The kernel may release a little buffer space asynchronously, so
+        // keep filling with single bytes until one is rejected.
+        WriteResult single = adapter.write(0x01);
+        for (int i = 0; i < 1000000 && single.status != WriteStatus::Failed; ++i) {
+            single = adapter.write(0x01);
+        }
         TEST_ASSERT_EQUAL_INT(WriteStatus::Failed, statusOf(single));
         TEST_ASSERT_EQUAL_UINT32(0, single.bytesWritten);
     }
