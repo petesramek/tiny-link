@@ -44,28 +44,64 @@ namespace {
         TEST_ASSERT_EQUAL_INT(-1, adapter.read());
     }
 
-    void testEspIdfAdapterWritesBytesAndRejectsInvalidLengths()
+    void testEspIdfAdapterReportsCompletePartialFailedAndEmptyWrites()
     {
         const uint8_t bytes[] = { 0x11u, 0x00u, 0xFEu };
         const size_t callsBefore = tinylinkEspWriteCalls;
-        adapter.write(0xA5u);
+        tinylink::WriteResult result = adapter.write(0xA5u);
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Complete),
+            static_cast<int>(result.status));
         TEST_ASSERT_EQUAL_UINT32(callsBefore + 1, tinylinkEspWriteCalls);
         TEST_ASSERT_EQUAL_UINT32(1, tinylinkEspLastWriteLength);
-        adapter.write(bytes, sizeof(bytes));
+        result = adapter.write(bytes, sizeof(bytes));
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Complete),
+            static_cast<int>(result.status));
+        TEST_ASSERT_EQUAL_UINT32(sizeof(bytes), result.bytesWritten);
         TEST_ASSERT_EQUAL_UINT32(callsBefore + 2, tinylinkEspWriteCalls);
         TEST_ASSERT_EQUAL_UINT32(sizeof(bytes), tinylinkEspLastWriteLength);
         TEST_ASSERT_EQUAL_UINT8_ARRAY(
             bytes, tinylinkEspLastWriteBytes, sizeof(bytes));
 
-        adapter.write(nullptr, 0);
+        tinylinkEspWriteResultOverridden = true;
+        tinylinkEspWriteResult = 2;
+        result = adapter.write(bytes, sizeof(bytes));
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Partial),
+            static_cast<int>(result.status));
+        TEST_ASSERT_EQUAL_UINT32(2, result.bytesWritten);
+        tinylinkEspWriteResult = -1;
+        result = adapter.write(bytes, sizeof(bytes));
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Failed),
+            static_cast<int>(result.status));
+        tinylinkEspWriteResult = 0;
+        result = adapter.write(bytes, sizeof(bytes));
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Failed),
+            static_cast<int>(result.status));
+        const size_t callsBeforeEmpty = tinylinkEspWriteCalls;
+        result = adapter.write(nullptr, 0);
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::ZeroLength),
+            static_cast<int>(result.status));
+        TEST_ASSERT_EQUAL_UINT32(callsBeforeEmpty, tinylinkEspWriteCalls);
+
         adapter.write(nullptr, 1);
         adapter.write(bytes, static_cast<size_t>(INT_MAX) + 1u);
-        TEST_ASSERT_EQUAL_UINT32(callsBefore + 2, tinylinkEspWriteCalls);
+        TEST_ASSERT_EQUAL_UINT32(callsBefore + 5, tinylinkEspWriteCalls);
 
         tinylinkEspDriverInstalled = false;
-        adapter.write(1);
-        adapter.write(bytes, sizeof(bytes));
-        TEST_ASSERT_EQUAL_UINT32(callsBefore + 2, tinylinkEspWriteCalls);
+        result = adapter.write(1);
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Failed),
+            static_cast<int>(result.status));
+        result = adapter.write(bytes, sizeof(bytes));
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::WriteStatus::Failed),
+            static_cast<int>(result.status));
+        TEST_ASSERT_EQUAL_UINT32(callsBefore + 5, tinylinkEspWriteCalls);
     }
 
     void testEspIdfAdapterConvertsMicrosecondsToMilliseconds()
@@ -81,7 +117,7 @@ int main()
     UNITY_BEGIN();
     RUN_TEST(testEspIdfAdapterChecksDriverAvailabilityAndBufferedBytes);
     RUN_TEST(testEspIdfAdapterReadsBytesAndMapsEmptyOrErrorToMinusOne);
-    RUN_TEST(testEspIdfAdapterWritesBytesAndRejectsInvalidLengths);
+    RUN_TEST(testEspIdfAdapterReportsCompletePartialFailedAndEmptyWrites);
     RUN_TEST(testEspIdfAdapterConvertsMicrosecondsToMilliseconds);
     return UNITY_END();
 }
@@ -95,6 +131,8 @@ extern "C" void setUp(void)
     tinylinkEspReadValue = 0;
     tinylinkEspWriteCalls = 0;
     tinylinkEspLastWriteLength = 0;
+    tinylinkEspWriteResultOverridden = false;
+    tinylinkEspWriteResult = 0;
     tinylinkEspStubTimeMicroseconds = 0;
 }
 

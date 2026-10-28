@@ -4,10 +4,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "adapters/WriteResult.h"
+
 namespace tinylink_test {
 
+    /** @brief Deterministic in-memory adapter for TinyLink engine tests. */
     class FakeAdapter {
     public:
+        /** @brief Maximum number of bytes retained in either test buffer. */
         static const size_t BUFFER_CAPACITY = 8192;
 
         FakeAdapter()
@@ -36,23 +40,35 @@ namespace tinylink_test {
             return _input[_inputPosition++];
         }
 
-        void write(uint8_t value)
+        tinylink::WriteResult write(uint8_t value)
         {
-            if (_open && _outputLength < BUFFER_CAPACITY) {
-                _output[_outputLength++] = value;
+            if (!_open) {
+                return tinylink::WriteResult::failure();
             }
+
+            if (_outputLength >= BUFFER_CAPACITY) {
+                return tinylink::WriteResult::failure();
+            }
+
+            _output[_outputLength++] = value;
+            return tinylink::WriteResult::fromCount(1, 1);
         }
 
-        void write(const uint8_t* data, size_t length)
+        tinylink::WriteResult write(const uint8_t* data, size_t length)
         {
+            if (length == 0) {
+                return tinylink::WriteResult::fromCount(0, 0);
+            }
+
             if (!_open || !data ||
                 length > BUFFER_CAPACITY - _outputLength) {
-                return;
+                return tinylink::WriteResult::failure();
             }
 
             for (size_t i = 0; i < length; ++i) {
                 _output[_outputLength++] = data[i];
             }
+            return tinylink::WriteResult::fromCount(length, length);
         }
 
         unsigned long millis() const { return _now; }

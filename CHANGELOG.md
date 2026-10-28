@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `src/adapters/WriteResult.h`: result-bearing write contract shared by all built-in adapters,
+  reporting complete, partial, failed, and zero-length operations.
 - `src/protocol/Status.h`: focused header with expanded `TinyStatus` enum (STATUS_OK, ERR_CRC,
   ERR_TIMEOUT, ERR_OVERFLOW, ERR_BUSY, ERR_PROCESSING, ERR_UNKNOWN) and `tinystatus_to_string()` helper.
 - `src/protocol/State.h`: focused header with expanded `TinyState` enum (CONNECTING, HANDSHAKING,

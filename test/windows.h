@@ -81,6 +81,10 @@ static DWORD tinylinkWindowsTick = 0;
 static size_t tinylinkWindowsCloseCalls = 0;
 static size_t tinylinkWindowsWriteCalls = 0;
 static DWORD tinylinkWindowsLastWriteLength = 0;
+/** @brief Enable a test-selected successful WriteFile byte count. */
+static bool tinylinkWindowsWriteCountOverridden = false;
+/** @brief Accepted-byte count returned when the Win32 override is enabled. */
+static DWORD tinylinkWindowsWriteAcceptedBytes = 0;
 static uint8_t tinylinkWindowsWrittenBytes[64] = {};
 static DCB tinylinkWindowsLastState = {};
 static COMMTIMEOUTS tinylinkWindowsLastTimeouts = {};
@@ -102,6 +106,8 @@ inline void tinylink_reset_windows_stub()
     tinylinkWindowsCloseCalls = 0;
     tinylinkWindowsWriteCalls = 0;
     tinylinkWindowsLastWriteLength = 0;
+    tinylinkWindowsWriteCountOverridden = false;
+    tinylinkWindowsWriteAcceptedBytes = 0;
     memset(tinylinkWindowsWrittenBytes, 0, sizeof(tinylinkWindowsWrittenBytes));
     memset(&tinylinkWindowsLastState, 0, sizeof(tinylinkWindowsLastState));
     memset(&tinylinkWindowsLastTimeouts, 0, sizeof(tinylinkWindowsLastTimeouts));
@@ -194,7 +200,11 @@ inline BOOL WriteFile(
             tinylinkWindowsWrittenBytes[i] = bytes[i];
         }
     }
-    *bytesWritten = tinylinkWindowsWriteSucceeds ? length : 0;
+    *bytesWritten = tinylinkWindowsWriteSucceeds
+        ? (tinylinkWindowsWriteCountOverridden
+            ? tinylinkWindowsWriteAcceptedBytes
+            : length)
+        : 0;
     return tinylinkWindowsWriteSucceeds ? TRUE : FALSE;
 }
 
