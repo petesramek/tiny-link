@@ -304,7 +304,7 @@ is recoverable; monitor `connectionState()` or `connected()` to observe it.
 
 `examples/`: Ready-to-run duplex, callback, and health-monitoring demos.
 
-`test/`: Native C++ unit tests using Unity.
+`test/`: Native C++ unit tests using Unity. Run with `pio test -e native` (built with `-Wall -Wextra -Werror -pedantic`); `pio test -e native_sanitized` adds ASan/UBSan (needs sanitizer runtimes; run in CI).
 
 ## 🔄 Migration Guide
 
