@@ -22,7 +22,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "../TinyWriteResult.h"
 
 #include "adapters/WriteResult.h"
 

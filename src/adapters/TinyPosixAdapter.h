@@ -133,13 +133,6 @@ public:
         if (ioctl(_fileDescriptor, FIONREAD, &count) != 0 || count < 0) {
             return 0;
         }
-    }
-
-    /** @brief Close the owned serial-device file descriptor. */
-    ~TinyPosixAdapter()
-    {
-        close_port();
-    }
 
         return count;
     }

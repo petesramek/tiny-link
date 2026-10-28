@@ -21,22 +21,6 @@
 
 - **Multi-Platform**: Native adapters for **Arduino**, **Linux (POSIX)**, **Windows (Win32)**, **ESP-IDF**, and **STM32 HAL**.
 
-## Adapter write results
-
-Every built-in adapter's `write()` methods return `tinylink::TinyWriteResult`, with a
-`TinyWriteStatus` of `Complete`, `Partial`, `Failed`, or `ZeroLength` and a `bytesWritten`
-count. A zero-length request is reported separately and does not call the platform writer;
-partial results preserve the number of bytes accepted. Existing calls that ignore the return
-value continue to compile, while custom adapters and overrides must update their write methods'
-return type.
-
-TinyLink send methods report whether the complete delimited frame was accepted. Incomplete writes
-are not resumed: `sendData()` returns false without consuming its sequence or entering
-the awaiting-ACK state, and `begin()` returns false while remaining in `Connecting` so the
-handshake can retry. Because bytes from a partial frame may already be on the wire, do not retry
-on that stream until it is synchronized again: recover/reopen and flush the transport endpoints, or let the
-receiver's inter-byte timeout discard the incomplete frame before sending another one.
-
 ---
 
 ## 🛠 Installation
@@ -401,7 +385,7 @@ Run the native unit suite and the dedicated payload compile-contract checks:
 
 ```sh
 pio test -e native
-python scripts/check_payload_compile_contract.py
+python tools/compile_contract/check.py
 ```
 
 The compile-contract check uses a native GNU or Clang C++11 compiler. It verifies that a valid
