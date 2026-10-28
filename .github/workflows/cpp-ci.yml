@@ -22,6 +22,9 @@ jobs:
       - name: Run Native Unit Tests
         run: pio test -e native
 
+      - name: Check Payload Compile Contract
+        run: python tools/compile_contract/check.py
+
   compile_check:
     runs-on: ubuntu-latest
     steps:

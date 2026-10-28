@@ -8,6 +8,11 @@
  * the same representation, including padding, byte order, alignment, enum
  * representation, and ABI. Applications requiring cross-platform payloads
  * must encode and decode fields explicitly.
+ *
+ * The payload type must be trivially copyable, enforced at compile time on
+ * every toolchain including AVR. That is only a minimum object-safety
+ * requirement for copying the object representation with memcpy(); it does
+ * not make the bytes portable between differing peers.
  */
 #ifndef TINYLINK_H
 #define TINYLINK_H
@@ -35,6 +40,21 @@
 #include "protocol/Stats.h"
 
 namespace tinylink {
+
+/**
+ * @brief True when T may have its object representation copied with memcpy().
+ *
+ * avr-libc toolchains lack <type_traits>, so the equivalent compiler intrinsic
+ * is used there; the requirement is identical on every platform.
+ */
+template <typename T>
+struct is_payload_copyable {
+#ifdef __AVR__
+    static const bool value = __is_trivially_copyable(T);
+#else
+    static const bool value = std::is_trivially_copyable<T>::value;
+#endif
+};
 
 #ifndef __AVR__
 /** @brief Compile-time validation of the TinyLink transport adapter contract. */
@@ -78,9 +98,12 @@ using adapter_check_t = int;
 /**
  * @brief TinyLink protocol engine.
  *
- * @tparam T Local application payload representation. sizeof(T) must not
- * exceed the protocol payload limit. TinyLink copies its object bytes without
- * imposing a portable field serialization.
+ * @tparam T Local application payload representation: an opaque byte
+ * sequence to TinyLink. It must be trivially copyable (a minimum object-safety
+ * requirement, not a portability guarantee) and sizeof(T) must not exceed the
+ * protocol payload limit. TinyLink copies its object bytes without imposing a
+ * portable field serialization; use explicit serialization when peers may
+ * differ in padding, endianness, alignment, enum representation, or ABI.
  * @tparam Adapter Transport adapter satisfying the documented adapter API.
  */
 template <typename T, typename Adapter, adapter_check_t<Adapter> = 0>
@@ -99,6 +122,8 @@ public:
     typedef void (*AckCallback)(uint8_t sequence, AckResult result);
 
 private:
+    static_assert(is_payload_copyable<T>::value,
+                  "TinyLink payload type must be trivially copyable");
     static_assert(sizeof(T) <= packet::PACKET_MAX_PAYLOAD_SIZE,
                   "TinyLink application payload exceeds 64 bytes");
 
