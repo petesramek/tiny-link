@@ -23,7 +23,7 @@ void setup() {
 
     // 2. Signal to the Tiny88 that we are ready to receive
     GatewayStatus msg = { 1, (uint32_t)millis() };
-    statusLink.sendData(message_type_to_wire(MessageType::Cmd), msg);
+    statusLink.sendData(static_cast<uint8_t>('C'), msg);
 }
 
 void loop() {

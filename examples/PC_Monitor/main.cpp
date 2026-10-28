@@ -1,9 +1,10 @@
 #include <iostream>
 #include <iomanip>
 #include "TinyLink.h"
-#include "adapters/TinyArduinoAdapter.h"
+#include "SharedData.h"
 
 using namespace tinylink;
+static const uint8_t TYPE_DATA = 'D';
 
 // 1. Choose the correct adapter for your OS
 #ifdef _WIN32

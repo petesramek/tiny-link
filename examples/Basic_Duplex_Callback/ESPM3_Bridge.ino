@@ -20,7 +20,7 @@ void onSensorDataReceived(const MyData& sensor) {
     // 2. Respond immediately with a command back to the Sensor
     // This demonstrates the "Reactive" nature of callbacks
     MyData response = { millis(), 0.0f, 1 }; // Sending Command ID 1
-    link.sendData(TYPE_DATA, response);
+    link.sendData(static_cast<uint8_t>('D'), response);
 }
 
 void setup() {

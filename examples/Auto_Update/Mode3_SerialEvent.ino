@@ -49,7 +49,7 @@ void onReceive(const SensorData& d) {
 // Simply forward to autoUpdateISR() for API consistency and portability.
 //
 void serialEvent() {
-    TinyLink<SensorData, TinyArduinoAdapter>::autoUpdateISR();
+    link.update();
 }
 
 // -------------------------------------------------------------------------

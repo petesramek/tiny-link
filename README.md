@@ -15,9 +15,9 @@
 
 - **COBS Framing**: Implements *Consistent Overhead Byte Stuffing*. By using `0x00` as a unique delimiter, the protocol never "desyncs" and is immune to payload data being mistaken for control characters.
 
-- **Event-Driven API**: Support for **Asynchronous Callbacks** via `onReceive()`. Handle data the moment it arrives without cluttering your `loop()`.
+- **Event-Driven API**: Register callbacks with `onDataReceived()`; callbacks run while `update()` processes incoming frames.
 
-- **Zero-Copy & Zero-Heap**: Optimized for 8-bit AVR. No dynamic memory allocation; data is processed directly in static buffers.
+- **Allocation-Free**: Optimized for 8-bit AVR. No dynamic memory allocation; frames are processed in fixed-size buffers.
 
 - **Multi-Platform**: Native adapters for **Arduino**, **Linux (POSIX)**, **Windows (Win32)**, **ESP-IDF**, and **STM32 HAL**.
 
@@ -31,238 +31,72 @@
 
 ---
 
-## 🚀 Quick Start (Callback Style)
+## 🚀 Quick Start
 
-### 1. Define your Data
+### 1. Define a payload and application message type
 
-TinyLink treats a consumer-defined payload as an opaque sequence of bytes and requires its type
-to be trivially copyable before copying its object representation. This is only a minimum
-object-safety requirement: raw object memory is not inherently a portable wire format.
+Application payloads are copied as opaque object bytes. Their types must be trivially copyable
+and no larger than 64 bytes. Both peers must agree on the payload representation; padding,
+endianness, alignment, and ABI can differ across platforms. For portable communication between
+different platforms, serialize fields explicitly into a defined wire format.
 
-Peers must agree on the payload layout. Raw object representations can differ across platforms
-because of padding, endianness, alignment, enum representation, or ABI. If peers may differ in
-any of these, serialize fields explicitly into a defined wire format and deserialize them on
-receipt. Packing a structure can control some layout details on a given compiler, but does not
-make its object representation portable.
+Use an application-defined message byte (for example, `'D'` for sensor data). `MessageType`
+contains only TinyLink's reserved internal frame types (`Log`, `Ack`, and `Handshake`); it is not
+an enum of application message types.
 
 ```cpp
-struct MyData {
+#include <stdint.h>
+#include <TinyLink.h>
+#include <adapters/TinyArduinoAdapter.h>
+
+struct SensorData {
   uint32_t uptime;
-  float temperature;
-} __attribute__((packed));
-```
+  int16_t temperatureCentiC;
+};
 
-### 2. Implementation
+static const uint8_t TYPE_SENSOR_DATA = 'D';
 
-TinyLink uses the tinylink namespace to prevent naming conflicts with other libraries.
+tinylink::TinyArduinoAdapter adapter(Serial);
+tinylink::TinyLink<SensorData, tinylink::TinyArduinoAdapter> link(adapter);
 
-#### 2.1 Namespace
-
-**For Arduino/Simplified Sketches**
-
-Add using namespace tinylink; after your includes to use the library classes directly.
-
-```cpp
-#include <TinyLink.h>
-#include <adapters/TinyArduinoAdapter.h>
-
-using namespace tinylink; // <--- Simplifies your code
-
-TinyArduinoAdapter adapter(Serial);
-TinyLink<MyData, TinyArduinoAdapter> link(adapter);
-```
-
-**For Professional C++ / Large Projects**
-
-It is recommended to use the explicit namespace prefix to ensure absolute symbol safety.
-
-```cpp
-#include <TinyLink.h>
-#include <adapters/TinyArduinoAdapter.h>
-
-tinylink::TinyPosixAdapter adapter("/dev/ttyUSB0", B9600);
-tinylink::TinyLink<MyData, tinylink::TinyPosixAdapter> link(adapter);
-```
-
-#### 2.2 Usage
-
-**Option A: Callback Style (Recommended)**
-
-Best for clean, event-driven code. The handler triggers automatically inside `update()`.
-
-```cpp
-void onReceive(const MyData& data) {
-    Serial.println(data.temperature);
+void onSensorData(const SensorData& data) {
+  Serial.println(data.temperatureCentiC);
+  link.sendAck();
 }
 
 void setup() {
-    link.onReceive(onReceive);
+  Serial.begin(9600);
+  link.onDataReceived(onSensorData);
+  link.begin();
 }
 
 void loop() {
-    link.update(); // Engine handles the callback
+  link.update();
 }
-```
 
-**Option B: Polling Style**
-
-Best for manual control or integrating into existing linear logic.
-
-```cpp
-void loop() {
-    link.update(); // Keep the engine running
-
-    if (link.available()) {
-        const MyData& data = link.peek();
-        Serial.println(data.temperature);
-        
-        link.flush(); // Clear flag for next packet
-    }
-}
-```
-
-### 3. Sending Data
-
-Sending is identical for both styles:
-
-```cpp
-#include <TinyLink.h>
-#include <adapters/TinyArduinoAdapter.h>
-
-TinyArduinoAdapter adapter(Serial);
-TinyLink<MyData, TinyArduinoAdapter> link(adapter);
-
-void loop() {
-  if(link.connected()) {
-    MyData msg = { millis(), 24.5f };
-    link.send(TYPE_DATA, msg);
+void sendCurrentReading() {
+  if (!link.connected() || !link.canSend()) {
+    return;
   }
+
+  const SensorData data = { static_cast<uint32_t>(millis()), 2450 };
+  link.sendData(TYPE_SENSOR_DATA, data);
 }
 ```
 
-## 📊 Choosing Your Pattern
+Call `begin()` on both peers to negotiate a connection. `update()` must be called regularly
+from the application loop to process received bytes, timeouts, and callbacks. `sendData()`
+requires a connected link and an available transmit slot; it returns `false` if the complete
+frame was not written. Call it when the application has data to send, and check its return
+value. The receiver should call `sendAck()` after accepting a frame to release the sender's
+stop-and-wait transmit slot.
 
-| Feature | Polling Style (available/peek) | Callback Style (onReceive) |
-| --- |  --- |  --- | 
-| Logic Flow | Linear / Sequential | Event-Driven / Asynchronous |
-| Best For | Simple sketches, step-by-step debugging. | Complex projects, multi-tasking, clean loop(). |
-| Control | User decides when to process data. | Data is processed the moment it arrives. |
-| Code Style | Traditional Arduino if checks. | Modern C++ "Listener" pattern. |
-| Manual Cleanup | Requires link.flush() after reading. | Automatic; no flush() or available() needed. |
-| RAM Usage | Identical (Zero-copy const T&). | Identical (2-byte Function Pointer). |
+## 📊 Choosing a receive style
 
-**Which one should I use?**
-
-**Use Polling** if your `loop()` is already very busy with `delay()` calls or if you need to wait for a specific state before "consuming" the incoming serial data.
-
-**Use Callbacks** if you want to keep your communication logic completely separated from your application logic. This is highly recommended as it makes the `TinyLink` engine more reactive.
-
-
-## 🔄 Auto-Update Modes
-
-TinyLink's protocol engine must be called periodically to process incoming bytes,
-manage timeouts, and fire callbacks.  There are **three supported ways** to drive
-it — choose the one that fits your hardware and application:
-
-| | Mode 1 — Main Loop | Mode 2 — Timer ISR | Mode 3 — serialEvent() |
-|---|---|---|---|
-| **How** | `link.update()` in `loop()` | `autoUpdateISR()` on a hardware timer | `autoUpdateISR()` from `serialEvent()` |
-| **Hardware interrupt?** | ❌ No | ✅ Timer required | ❌ No |
-| **Extra setup call?** | None | Timer init + `attachInterrupt` | None |
-| **`enableAutoUpdate()`?** | Not needed | Not needed | Not needed |
-| **Works if loop() blocks?** | ❌ No | ✅ Yes | ❌ No |
-| **Best for** | Any board, simplest code | Deterministic, busy loops | No-timer boards, reactive RX |
-
-### Mode 1 — Main Loop (default, works everywhere)
-
-```cpp
-void loop() {
-    link.update();  // ← only required call; works on every board
-}
-```
-
-### Mode 2 — Timer ISR (deterministic, interrupt-driven)
-
-The constructor auto-registers the instance — no `enableAutoUpdate()` needed.
-
-```cpp
-#include <TimerOne.h>
-
-void setup() {
-    Timer1.initialize(1000);  // 1 ms
-    Timer1.attachInterrupt(TinyLink<MyData, TinyArduinoAdapter>::autoUpdateISR);
-    // No enableAutoUpdate() call required.
-}
-// loop() does not need to call update() at all.
-```
-
-### Mode 3 — serialEvent() (zero-setup, no timer needed)
-
-Arduino calls `serialEvent()` automatically between `loop()` iterations when
-Serial bytes are waiting — no library or interrupt configuration required.
-
-```cpp
-void serialEvent() {
-    TinyLink<MyData, TinyArduinoAdapter>::autoUpdateISR();
-}
-// setup() and loop() have no TinyLink maintenance calls.
-```
-
-> **Multi-instance note:** When you have two `TinyLink<T,Adapter>` objects of
-> the same type, the last-constructed one is the default ISR target.  Call
-> `link.enableAutoUpdate()` on the desired instance to override.
-
-For a complete two-device IoT scenario in all three modes, see the
-[`IoT_Sensor_Gateway_*`](examples/) family of examples below.
-
----
-
-## 🌐 IoT Sensor Gateway — Full Bidirectional Examples
-
-The `IoT_Sensor_Gateway_*` examples demonstrate a realistic ATtiny88 ↔ ESP8266
-system: the ATtiny88 reads a temperature sensor, the ESP8266 requests readings
-every 60 seconds and forwards them to a cloud endpoint.
-
-### Scenario
-
-```
-ATtiny88                              ESP8266
-    │◄──── Handshake ───────────────────►│  begin() on both sides
-    │             both: WAIT_FOR_SYNC    │
-    │                                    │
-    │◄═══ TYPE_CMD (request) ════════════│  every 60 s
-    │═══ ACK ════════════════════════════►│  sendAck() in callback
-    │═══ TYPE_DATA (temp + uptime) ═════►│
-    │◄══ ACK ════════════════════════════ │  sendAck() in callback
-    │                         ESP: posts to cloud
-```
-
-### `sendAck()` — Releasing the Peer from AWAITING_ACK
-
-When `begin()` is called (handshake mode), every `sendData()` puts the sender
-into `AWAITING_ACK`.  The receiver must call `sendAck()` to release it promptly:
-
-```cpp
-void onReceive(const SensorMessage& data) {
-    link.sendAck();          // ← release peer from AWAITING_ACK immediately
-    link.sendData(TYPE_DATA, response);  // reply — safe to call from callback
-}
-```
-
-`begin()` returns `true` only when the first handshake request was fully written; on `false`
-the link remains connecting and retries from `update()`. All send methods return `false` on
-failed or partial output, without consuming a sequence number or entering `AWAITING_ACK`.
-
-### Three Update Modes, Side by Side
-
-| Example folder                     | update() driven by   | ISR-safe callbacks? | HW interrupt? |
-|------------------------------------|----------------------|---------------------|---------------|
-| `IoT_Sensor_Gateway_Polling`       | `loop()`             | ✅ Yes              | ❌ No         |
-| `IoT_Sensor_Gateway_TimerISR`      | Hardware timer ISR   | ⚠ Deferred only    | ✅ Yes        |
-| `IoT_Sensor_Gateway_SerialEvent`   | `serialEvent()`      | ✅ Yes              | ❌ No         |
-
-> **Mode 2 (Timer ISR) rule:** callbacks fire inside a hardware ISR — only set
-> `volatile` flags there.  Call `sendAck()` and `sendData()` from `loop()`.
+Use `onDataReceived()` for callback-driven handling, or use `available()` and `read()` to poll
+for one received payload. `read()` returns the payload by value and clears the availability
+flag; `flush()` can clear the flag without reading the payload. In either style, keep calling
+`update()` regularly.
 
 
 ## 📊 Performance & Telemetry
@@ -270,7 +104,7 @@ failed or partial output, without consuming a sequence number or entering `AWAIT
 Monitor link health in real-time to diagnose wiring issues:
 
 ```cpp
-const Stats stats = link.stats();
+const tinylink::Stats stats = link.stats();
 Serial.print("Packets: "); Serial.println(stats.packetsReceived);
 Serial.print("Checksum Errors: "); Serial.println(stats.checksumMismatches);
 Serial.print("ACK Timeouts: "); Serial.println(stats.ackTimeouts);
@@ -304,80 +138,34 @@ is recoverable; monitor `connectionState()` or `connected()` to observe it.
 
 ## 📂 Project Structure
 
-`src/`: Core protocol logic (`TinyLink.h`, `TinyProtocol.h`).
+`src/TinyLink.h`: Core protocol engine and public API.
 
-`src/protocol/`: Focused protocol headers (`MessageType.h`, `Status.h`, `State.h`, `Stats.h`, `AckMessage.h`, `DebugMessage.h`).
+`src/protocol/`: Public connection states, message types, ACK results, and telemetry.
 
-`src/adapters/`: Hardware-specific drivers (Arduino, Posix, Windows, etc.).
+`src/adapters/`: Hardware-specific transport adapters (Arduino, POSIX, Windows, ESP-IDF, and STM32 HAL).
 
-`examples/`: Ready-to-run duplex, callback, and health-monitoring demos.
+`src/internal/`: Packet codecs and wire-protocol implementation details.
+
+`examples/`: Hardware and transport demonstrations; see each example README for prerequisites
+and supported update patterns.
 
 `test/`: Native C++ unit tests using Unity. Run with `pio test -e native` (built with `-Wall -Wextra -Werror -pedantic`); `pio test -e native_sanitized` adds ASan/UBSan (needs sanitizer runtimes; run in CI).
 
-## 🔄 Migration Guide
+## 🔄 Protocol and compatibility notes
 
-### `MessageType::Req` → `MessageType::Cmd` (wire `'R'` → `'C'`) — **Breaking Change**
+Application message identifiers are `uint8_t` values supplied to `sendData()`. The reserved
+internal identifiers are `MessageType::Log` (`'L'`), `MessageType::Ack` (`'A'`), and
+`MessageType::Handshake` (`'H'`); do not use those values for application payloads.
 
-`MessageType::Req` (wire byte `'R'`) has been removed and replaced with `MessageType::Cmd`
-(wire byte `'C'`). Legacy `'R'` bytes are **no longer accepted** by the parser.
+`begin()` starts protocol-version negotiation. Its `bool` result reports whether the initial
+handshake request was fully written; if it returns `false`, the link remains connecting and
+retries from `update()`. Application sends use `sendData()` and the receiver acknowledges an
+accepted frame with `sendAck()`. A link supports one outstanding acknowledged application
+send at a time; use `canSend()` to check readiness.
 
-**Action required**: Update all peers to send `'C'` for command frames.
-
-```cpp
-// Outgoing command frames:
-link.send(message_type_to_wire(MessageType::Cmd), msg);   // emits 'C'
-
-// Parsing — only 'C' is accepted:
-MessageType mt;
-if (message_type_from_wire(link.type(), mt) && mt == MessageType::Cmd) {
-    // handle command
-}
-```
-
-### `MessageType::Ack` added (wire `'A'`)
-
-ACK/NACK frames now use `MessageType::Ack` (`'A'`) carrying a `TinyAck` payload:
-
-```cpp
-// TinyAck payload: 2 bytes — seq (uint8_t) + result (TinyStatus)
-tinylink::TinyAck ack;
-ack.seq    = link.seq();
-ack.result = tinylink::TinyStatus::STATUS_OK;
-link.send(message_type_to_wire(tinylink::MessageType::Ack), ack);
-```
-
-### `TinyStatus` — consolidated ACK/error codes
-
-`TinyStatus` now carries granular ACK codes (previously spread across a separate
-`TinyResult` type, which has been removed):
-
-| Value | Code | Meaning |
-|-------|------|---------|
-| `0x00` | `STATUS_OK` | No error; operation succeeded |
-| `0x01` | `ERR_CRC` | Checksum or framing failure |
-| `0x02` | `ERR_TIMEOUT` | Inter-byte timeout |
-| `0x03` | `ERR_OVERFLOW` | Receive buffer overflow |
-| `0x04` | `ERR_BUSY` | Peer is busy; retry later |
-| `0x05` | `ERR_PROCESSING` | Peer is still processing a prior command |
-| `0xFF` | `ERR_UNKNOWN` | Unspecified error |
-
-Use `tinystatus_to_string()` for human-readable diagnostics:
-
-```cpp
-#include "protocol/Status.h"
-const char* msg = tinylink::tinystatus_to_string(tinylink::TinyStatus::ERR_CRC);
-```
-
-### `DebugMessage` — structured debug payload (`MessageType::Debug` / `'g'`)
-
-```cpp
-#include "protocol/DebugMessage.h"
-tinylink::DebugMessage dbg;
-dbg.ts    = millis();
-dbg.level = 1;
-tinylink::debugmessage_set_text(dbg, "boot complete");
-link.send(message_type_to_wire(tinylink::MessageType::Debug), dbg);
-```
+Payload types must be trivially copyable and at most 64 bytes. TinyLink transmits object bytes
+as-is; for peers with differing representations, define an explicit field encoding instead.
+See the [changelog](CHANGELOG.md) for the complete 0.5.0 changes and migration details.
 
 ## Testing
 

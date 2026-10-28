@@ -4,7 +4,7 @@ This example demonstrates a **full-duplex, bidirectional** link between an **MH-
 
 ## 🌟 Features
 
-- **Polling Logic**: Uses `link.available()` and `link.peek()` for manual data handling.
+- **Polling Logic**: Uses `link.available()` and `link.read()` for manual data handling.
 - **Bi-Directional**: Both devices act as peers, sending and receiving data simultaneously.
 - **Reliable**: Protected by **COBS** framing and **Fletcher-16 checksums**.
 
@@ -28,7 +28,7 @@ void loop() {
     link.update(); // Keep the engine running
 
     if (link.available()) {
-        const MyData& incoming = link.peek();
+        const MyData incoming = link.read();
         // Handle your data here...
         
         link.flush(); // Clear the flag to allow the next packet
@@ -37,8 +37,8 @@ void loop() {
 ```
 
 - **`link.available()`**: Returns `true` only when a full, verified packet has arrived.
-- **`link.peek()`**: Provides a constant reference to the data without copying it, saving RAM.
-- **`link.flush()`**: Tells the library you have finished reading the data, allowing the hardware buffer to be parsed for the next packet.
+- **`link.read()`**: Returns the latest payload by value and clears the availability flag.
+- **`link.flush()`**: Clears the availability flag without reading the payload.
 
 ## 🚀 How to Run
 

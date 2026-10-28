@@ -11,6 +11,6 @@ struct SensorData {
 } __attribute__((packed));
 
 // Message-type tag used when sending data frames.
-static const uint8_t TYPE_DATA = static_cast<uint8_t>(tinylink::MessageType::Data);
+static const uint8_t TYPE_DATA = 'D';
 
 #endif // SHARED_DATA_H

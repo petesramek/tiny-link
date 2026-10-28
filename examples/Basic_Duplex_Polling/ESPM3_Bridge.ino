@@ -16,13 +16,12 @@ void loop() {
     link.update();
 
     if (link.available()) {
-        const MyData& sensor = link.peek();
+        link.read();
         // Here you would forward 'sensor.temperature' to MQTT or Web
         
         // Respond with a command
         MyData cmd = { millis(), 0.0f, 1 };
-        link.sendData(TYPE_DATA, cmd);
+        link.sendData(static_cast<uint8_t>('D'), cmd);
         
-        link.flush();
     }
 }

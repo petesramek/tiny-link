@@ -16,14 +16,16 @@ void loop() {
 
     static uint32_t lastReport = 0;
     if (millis() - lastReport > 5000) {
-        const TinyStats& stats = link.getStats();
+        const tinylink::Stats stats = link.stats();
         
         Serial.println("--- TinyLink Health Report ---");
-        Serial.print("Success Packets: "); Serial.println(stats.packets);
-        Serial.print("CRC/COBS Errors: "); Serial.println(stats.crc);
-        Serial.print("Timeouts:        "); Serial.println(stats.timeout);
+        Serial.print("Success Packets: "); Serial.println(stats.packetsReceived);
+        Serial.print("Checksum Errors: "); Serial.println(stats.checksumMismatches);
+        Serial.print("COBS Decode Failures: "); Serial.println(stats.cobsDecodeFailures);
+        Serial.print("Inter-byte Timeouts: "); Serial.println(stats.interByteTimeouts);
+        Serial.print("ACK Timeouts: "); Serial.println(stats.ackTimeouts);
         
-        if (stats.crc > 10) {
+        if (stats.checksumMismatches > 10 || stats.cobsDecodeFailures > 10) {
             Serial.println("WARNING: High interference detected!");
         }
         
