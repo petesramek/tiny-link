@@ -71,6 +71,10 @@ Minimal stand-ins for the Arduino, ESP-IDF UART, STM32 HAL, and Windows serial A
 
 Unity cannot assert that code fails to compile, so `python tools/compile_contract/check.py [compiler]` (default `g++`, `-std=gnu++11 -fsyntax-only`) compiles each probe: `payload_valid.cpp` must compile; `payload_not_trivially_copyable.cpp` must fail with "must be trivially copyable"; `payload_too_large.cpp` must fail with "exceeds 64 bytes". The script exits non-zero if any case deviates.
 
+### Strict and sanitized builds
+
+The `native` environment compiles with `-std=c++11 -Wall -Wextra -Werror -pedantic`. `native_sanitized` extends it with `-fsanitize=address,undefined` and runs in the Linux CI job; it needs sanitizer runtimes unavailable on some hosts (e.g. Windows/Clang).
+
 ### Capacity assumptions
 
 - Maximum application payload: 64 bytes (`PACKET_MAX_PAYLOAD_SIZE`); packet = 3-byte header + payload + 2-byte checksum = at most 69 bytes (`PACKET_MAX_SIZE`).
