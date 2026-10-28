@@ -241,6 +241,10 @@ void onReceive(const SensorMessage& data) {
 }
 ```
 
+`begin()` returns `true` only when the first handshake request was fully written; on `false`
+the link remains connecting and retries from `update()`. All send methods return `false` on
+failed or partial output, without consuming a sequence number or entering `AWAITING_ACK`.
+
 ### Three Update Modes, Side by Side
 
 | Example folder                     | update() driven by   | ISR-safe callbacks? | HW interrupt? |

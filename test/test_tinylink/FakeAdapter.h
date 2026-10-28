@@ -19,7 +19,9 @@ namespace tinylink_test {
               _now(0),
               _inputLength(0),
               _inputPosition(0),
-              _outputLength(0)
+              _outputLength(0),
+              _scriptLength(0),
+              _scriptPosition(0)
         {}
 
         bool isOpen() const { return _open; }
@@ -42,16 +44,7 @@ namespace tinylink_test {
 
         tinylink::WriteResult write(uint8_t value)
         {
-            if (!_open) {
-                return tinylink::WriteResult::failure();
-            }
-
-            if (_outputLength >= BUFFER_CAPACITY) {
-                return tinylink::WriteResult::failure();
-            }
-
-            _output[_outputLength++] = value;
-            return tinylink::WriteResult::fromCount(1, 1);
+            return write(&value, 1);
         }
 
         tinylink::WriteResult write(const uint8_t* data, size_t length)
@@ -65,10 +58,31 @@ namespace tinylink_test {
                 return tinylink::WriteResult::failure();
             }
 
-            for (size_t i = 0; i < length; ++i) {
+            size_t accepted = length;
+            if (_scriptPosition < _scriptLength) {
+                const size_t limit = _script[_scriptPosition++];
+                if (limit < accepted) {
+                    accepted = limit;
+                }
+            }
+
+            for (size_t i = 0; i < accepted; ++i) {
                 _output[_outputLength++] = data[i];
             }
-            return tinylink::WriteResult::fromCount(length, length);
+            return tinylink::WriteResult::fromCount(length, accepted);
+        }
+
+        /**
+         * @brief Script the next write calls: each entry is the number of
+         * bytes that call accepts (0 fails it; less than requested is partial).
+         */
+        void scriptWrites(const size_t* limits, size_t count)
+        {
+            _scriptLength = count < SCRIPT_CAPACITY ? count : SCRIPT_CAPACITY;
+            _scriptPosition = 0;
+            for (size_t i = 0; i < _scriptLength; ++i) {
+                _script[i] = limits[i];
+            }
         }
 
         unsigned long millis() const { return _now; }
@@ -114,6 +128,10 @@ namespace tinylink_test {
         size_t _inputPosition;
         uint8_t _output[BUFFER_CAPACITY];
         size_t _outputLength;
+        static const size_t SCRIPT_CAPACITY = 8;
+        size_t _script[SCRIPT_CAPACITY];
+        size_t _scriptLength;
+        size_t _scriptPosition;
     };
 
 } // namespace tinylink_test
