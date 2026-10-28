@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Reorganized native test suites under `test/suites` by adapter, engine, protocol, and codec
+  responsibility (`test_dir` in `platformio.ini`). The TinyLink suite is split into lifecycle,
+  application, ACK/sequence, receive/mailbox, timeout, overflow/recovery, logging, and telemetry
+  files with a shared fixture; platform SDK stubs and the fake adapter now live under
+  `test/support`. All 142 registrations are preserved, including the Linux-only POSIX PTY tests.
+
 ### Added
 - `test/test_adapter_posix`: Linux pseudo-terminal tests for `TinyPosixAdapter` covering open
   failures, raw 8N1 configuration, non-blocking I/O, write results, descriptor cleanup,

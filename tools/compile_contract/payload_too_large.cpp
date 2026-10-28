@@ -1,6 +1,6 @@
 // Must NOT compile: payload exceeds the maximum payload size.
 #include "TinyLink.h"
-#include "test_tinylink/FakeAdapter.h"
+#include "support/tinylink/FakeAdapter.h"
 
 struct OversizedPayload {
     uint8_t bytes[tinylink::packet::PACKET_MAX_PAYLOAD_SIZE + 1];
