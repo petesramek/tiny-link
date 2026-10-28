@@ -537,7 +537,29 @@ public:
             return;
         }
 
+        if (!_adapter->isOpen()) {
+            if (_connectionState != ConnectionState::Failed) {
+                _connectionState = ConnectionState::Failed;
+                _receiveState = ReceiveState::WaitingForFrame;
+                _encodedReceiveLength = 0;
+                _transmitState = TransmitState::Ready;
+                _pendingTransmitSequence = 0;
+                _hasReceivedSequence = false;
+            }
+            return;
+        }
+
         const unsigned long now = _adapter->millis();
+
+        if (_connectionState == ConnectionState::Failed) {
+            if (_handshakeEnabled) {
+                _connectionState = ConnectionState::Connecting;
+                _lastHandshakeSent = now;
+                send_handshake(HandshakeKind::Request);
+            } else {
+                _connectionState = ConnectionState::Inactive;
+            }
+        }
 
         if (_handshakeEnabled &&
             _connectionState == ConnectionState::Connecting &&

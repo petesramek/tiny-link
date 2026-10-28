@@ -1588,6 +1588,185 @@ namespace {
         TEST_ASSERT_EQUAL_UINT32(0, adapter.outputSize());
     }
 
+    void testTransportLossCancelsAcksAndRestartsHandshakeWithoutSequenceReuse()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        link.onAckReceived(onAck);
+        ackCallbackCount = 0;
+        TEST_ASSERT_TRUE(link.begin());
+        TEST_ASSERT_TRUE(tinylink_test::queueHandshake(
+            adapter, tinylink::HandshakeKind::Response));
+        link.update();
+        TEST_ASSERT_TRUE(link.connected());
+
+        const Payload outbound = payloadWith(0x31);
+        TEST_ASSERT_TRUE(link.sendData(0x40, outbound));
+        TEST_ASSERT_TRUE(link.awaitingAck());
+        uint8_t type = 0;
+        uint8_t sequence = 0;
+        uint8_t bytes[sizeof(Payload)] = {};
+        size_t length = 0;
+        TEST_ASSERT_TRUE(tinylink_test::decodeWrittenFrame(
+            adapter, 1, type, sequence, bytes, sizeof(bytes), length));
+        TEST_ASSERT_EQUAL_UINT8(0, sequence);
+        adapter.clearOutput();
+
+        const Payload inbound = payloadWith(0x51);
+        TEST_ASSERT_TRUE(tinylink_test::queueApplication(
+            adapter, 0x44, 73, inbound.bytes, sizeof(inbound.bytes)));
+        link.update();
+        TEST_ASSERT_TRUE(link.available());
+        TEST_ASSERT_TRUE(link.sendAck());
+        TEST_ASSERT_EQUAL_UINT8(73, ackedSequence(adapter));
+
+        adapter.setOpen(false);
+        link.update();
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::ConnectionState::Failed),
+            static_cast<int>(link.connectionState()));
+        TEST_ASSERT_FALSE(link.connected());
+        TEST_ASSERT_FALSE(link.canSend());
+        TEST_ASSERT_FALSE(link.awaitingAck());
+        TEST_ASSERT_FALSE(link.sendAck());
+        TEST_ASSERT_EQUAL_UINT32(0, ackCallbackCount);
+
+        adapter.clearOutput();
+        const size_t failedHandshakeWrite[] = { 0 };
+        scriptWrites(adapter, failedHandshakeWrite, 1);
+        adapter.setOpen(true);
+        link.update();
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::ConnectionState::Connecting),
+            static_cast<int>(link.connectionState()));
+        TEST_ASSERT_FALSE(link.connected());
+        TEST_ASSERT_FALSE(link.awaitingAck());
+        TEST_ASSERT_EQUAL_UINT32(0, tinylink_test::writtenFrameCount(adapter));
+
+        adapter.advanceTime(999);
+        link.update();
+        TEST_ASSERT_EQUAL_UINT32(0, tinylink_test::writtenFrameCount(adapter));
+        adapter.advanceTime(1);
+        link.update();
+        TEST_ASSERT_EQUAL_UINT32(1, tinylink_test::writtenFrameCount(adapter));
+
+        uint8_t handshakePayload[tinylink::HANDSHAKE_MESSAGE_WIRE_SIZE] = {};
+        TEST_ASSERT_TRUE(tinylink_test::decodeWrittenFrame(
+            adapter, 0, type, sequence, handshakePayload,
+            sizeof(handshakePayload), length));
+        TEST_ASSERT_EQUAL_UINT8(
+            tinylink::message_type_to_wire(tinylink::MessageType::Handshake),
+            type);
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::HandshakeKind::Request),
+            static_cast<int>(handshakePayload[0]));
+
+        adapter.clearOutput();
+        TEST_ASSERT_TRUE(tinylink_test::queueHandshake(
+            adapter, tinylink::HandshakeKind::Response));
+        link.update();
+        TEST_ASSERT_TRUE(link.connected());
+        TEST_ASSERT_FALSE(link.sendAck());
+        TEST_ASSERT_TRUE(link.sendData(0x40, outbound));
+        TEST_ASSERT_TRUE(tinylink_test::decodeWrittenFrame(
+            adapter, 0, type, sequence, bytes, sizeof(bytes), length));
+        TEST_ASSERT_EQUAL_UINT8(1, sequence);
+
+        TEST_ASSERT_TRUE(tinylink_test::queueAck(
+            adapter, 0, tinylink::AckResult::Ok));
+        link.update();
+        TEST_ASSERT_TRUE(link.awaitingAck());
+        TEST_ASSERT_EQUAL_UINT32(0, ackCallbackCount);
+
+        TEST_ASSERT_TRUE(tinylink_test::queueAck(
+            adapter, 1, tinylink::AckResult::Ok));
+        link.update();
+        TEST_ASSERT_FALSE(link.awaitingAck());
+        TEST_ASSERT_EQUAL_UINT32(1, ackCallbackCount);
+        TEST_ASSERT_EQUAL_UINT8(1, lastAckSequence);
+    }
+
+    void testTransportLossDiscardsPartialFrameAndRestoresBasicLinkForSynchronization()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+
+        const Payload payload = payloadWith(0x61);
+        uint8_t encoded[tinylink::packet::PACKET_MAX_SIZE +
+            tinylink::packet::PACKET_MAX_SIZE / 254u + 1u] = {};
+        size_t encodedLength = 0;
+        TEST_ASSERT_TRUE(tinylink_test::encodePacket(
+            0x42, 74, payload.bytes, sizeof(payload.bytes),
+            encoded, sizeof(encoded), encodedLength));
+        TEST_ASSERT_TRUE(encodedLength > 1);
+        TEST_ASSERT_TRUE(adapter.queueBytes(encoded, encodedLength / 2));
+        link.update();
+        TEST_ASSERT_FALSE(link.available());
+
+        adapter.setOpen(false);
+        link.update();
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::ConnectionState::Failed),
+            static_cast<int>(link.connectionState()));
+
+        adapter.setOpen(true);
+        link.update();
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::ConnectionState::Inactive),
+            static_cast<int>(link.connectionState()));
+        TEST_ASSERT_FALSE(link.connected());
+        TEST_ASSERT_FALSE(link.canSend());
+
+        TEST_ASSERT_TRUE(tinylink_test::queueHandshake(
+            adapter, tinylink::HandshakeKind::Request));
+        link.update();
+        TEST_ASSERT_TRUE(link.connected());
+
+        TEST_ASSERT_TRUE(adapter.queueBytes(
+            encoded + encodedLength / 2,
+            encodedLength - encodedLength / 2));
+        TEST_ASSERT_TRUE(adapter.queueByte(0));
+        link.update();
+        TEST_ASSERT_FALSE(link.available());
+        TEST_ASSERT_TRUE(tinylink_test::queueApplication(
+            adapter, 0x42, 75, payload.bytes, sizeof(payload.bytes)));
+        link.update();
+        TEST_ASSERT_TRUE(link.available());
+        const Payload received = link.read();
+        TEST_ASSERT_EQUAL_UINT8_ARRAY(
+            payload.bytes, received.bytes, sizeof(payload.bytes));
+    }
+
+    void testTransportLossPreservesDeliveredPollingPayload()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+
+        const Payload payload = payloadWith(0x71);
+        TEST_ASSERT_TRUE(tinylink_test::queueApplication(
+            adapter, 0x43, 76, payload.bytes, sizeof(payload.bytes)));
+        link.update();
+        TEST_ASSERT_TRUE(link.available());
+
+        adapter.setOpen(false);
+        link.update();
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::ConnectionState::Failed),
+            static_cast<int>(link.connectionState()));
+        link.update();
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::ConnectionState::Failed),
+            static_cast<int>(link.connectionState()));
+        TEST_ASSERT_TRUE(link.available());
+
+        const Payload received = link.read();
+        TEST_ASSERT_FALSE(link.available());
+        TEST_ASSERT_EQUAL_UINT8_ARRAY(
+            payload.bytes, received.bytes, sizeof(payload.bytes));
+    }
+
     // Positive compile contracts: valid payloads, including the maximum size.
     static_assert(tinylink::is_payload_copyable<Payload>::value,
                   "plain byte-array payload must be accepted");
@@ -1673,6 +1852,9 @@ int main()
     RUN_TEST(testBeginInvalidatesAckSequence);
     RUN_TEST(testPeerHandshakeRequestInvalidatesAckSequence);
     RUN_TEST(testIncompatibleHandshakeInvalidatesAckSequence);
+    RUN_TEST(testTransportLossCancelsAcksAndRestartsHandshakeWithoutSequenceReuse);
+    RUN_TEST(testTransportLossDiscardsPartialFrameAndRestoresBasicLinkForSynchronization);
+    RUN_TEST(testTransportLossPreservesDeliveredPollingPayload);
     return UNITY_END();
 }
 
