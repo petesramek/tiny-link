@@ -128,11 +128,20 @@ private:
     size_t _encodedReceiveLength;
     T _mailbox;
     bool _hasNew;
+    bool _outputDirty;
 
     TinyLink(const TinyLink&) = delete;
     TinyLink& operator=(const TinyLink&) = delete;
 
-    /** @brief Write a complete framed packet to the adapter. */
+    /**
+     * @brief Write a complete framed packet to the adapter.
+     *
+     * Succeeds only when both the encoded body and the delimiter were fully
+     * accepted. A partial body or a failed delimiter leaves an unterminated
+     * fragment on the wire; it cannot be resumed, so the call fails and the
+     * next write first emits a delimiter to terminate the fragment. The peer
+     * discards the fragment as an invalid frame.
+     */
     bool write_frame(uint8_t type, uint8_t sequence,
                      const uint8_t* payload, size_t payloadLength)
     {
@@ -159,8 +168,28 @@ private:
             return false;
         }
 
-        _adapter->write(encoded, cobs.bytesWritten);
-        _adapter->write(uint8_t(0));
+        // A previously interrupted frame left unterminated bytes on the wire.
+        // Partial writes cannot be resumed, so close the stale bytes with a
+        // delimiter first; the peer discards them as one invalid frame.
+        if (_outputDirty) {
+            if (!_adapter->write(uint8_t(0)).complete()) {
+                return false;
+            }
+            _outputDirty = false;
+        }
+
+        const WriteResult body = _adapter->write(encoded, cobs.bytesWritten);
+        if (!body.complete()) {
+            // Failed wrote nothing; Partial left an unterminated fragment.
+            _outputDirty = body.status == WriteStatus::Partial;
+            return false;
+        }
+
+        if (!_adapter->write(uint8_t(0)).complete()) {
+            _outputDirty = true;
+            return false;
+        }
+
         return true;
     }
 
@@ -255,8 +284,11 @@ private:
         }
 
         if (message.kind == HandshakeKind::Request) {
-            _connectionState = ConnectionState::Connected;
-            send_handshake(HandshakeKind::Response);
+            // Connect only once the response is out; otherwise the peer's
+            // retried request gets another chance.
+            if (send_handshake(HandshakeKind::Response)) {
+                _connectionState = ConnectionState::Connected;
+            }
         } else if (_connectionState == ConnectionState::Connecting) {
             _connectionState = ConnectionState::Connected;
         }
@@ -410,7 +442,8 @@ public:
           _encodedReceive(),
           _encodedReceiveLength(0),
           _mailbox(),
-          _hasNew(false)
+          _hasNew(false),
+          _outputDirty(false)
     {}
 
     /** @brief Register an application payload callback. */
@@ -431,12 +464,18 @@ public:
     /** @brief Set receive and acknowledgement timeout in milliseconds. */
     void setTimeout(unsigned long milliseconds) { _timeout = milliseconds; }
 
-    /** @brief Start protocol-version handshake negotiation. */
-    void begin()
+    /**
+     * @brief Start protocol-version handshake negotiation.
+     *
+     * @return true if the first handshake request was completely written.
+     * On false the engine is still Connecting and update() retries the
+     * request at the handshake retry interval.
+     */
+    bool begin()
     {
         _handshakeEnabled = true;
         _connectionState = ConnectionState::Connecting;
-        send_handshake(HandshakeKind::Request);
+        return send_handshake(HandshakeKind::Request);
     }
 
     /** @brief Reset all runtime protocol state while preserving callbacks and timeout. */
@@ -534,7 +573,8 @@ public:
             return false;
         }
 
-        const uint8_t sequence = _nextTransmitSequence++;
+        // The sequence is consumed only after the whole frame was written.
+        const uint8_t sequence = _nextTransmitSequence;
         if (!write_frame(
                 type,
                 sequence,
@@ -543,6 +583,7 @@ public:
             return false;
         }
 
+        ++_nextTransmitSequence;
         _pendingTransmitSequence = sequence;
         _lastTransmit = _adapter->millis();
         _transmitState = TransmitState::AwaitingAck;
@@ -581,11 +622,16 @@ public:
             return false;
         }
 
-        return write_frame(
-            message_type_to_wire(MessageType::Log),
-            _nextTransmitSequence++,
-            payload,
-            sizeof(payload));
+        if (!write_frame(
+                message_type_to_wire(MessageType::Log),
+                _nextTransmitSequence,
+                payload,
+                sizeof(payload))) {
+            return false;
+        }
+
+        ++_nextTransmitSequence;
+        return true;
     }
 };
 

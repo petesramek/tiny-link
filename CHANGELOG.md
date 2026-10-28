@@ -47,7 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All registered in `test/test_runner.cpp`.
 
 ### Changed
-- `src/TinyProtocol.h` is now a lightweight umbrella header that re-exports all focused
+- `TinyLink::begin()` now returns `bool` (was `void`): `true` only if the first handshake
+  request was completely written. On `false` the link stays `Connecting` and `update()` retries.
+  Existing callers may ignore the result.
+- The engine honours `WriteResult`: `sendData()`, `sendAck()`, `sendLog()` and handshakes return
+  `false` unless both the encoded frame and its delimiter were fully accepted. Failed output does
+  not enter `AwaitingAck` or consume a transmit sequence. A received handshake request connects
+  only after its response was written. A partial body or failed delimiter leaves an unterminated
+  fragment; it is not resumed, and the next write first emits a recovery delimiter so the peer
+  discards the fragment. A frame whose delimiter failed may still be delivered by the peer.- `src/TinyProtocol.h` is now a lightweight umbrella header that re-exports all focused
   `src/protocol/*.h` headers. Existing `#include "TinyProtocol.h"` continues to work unchanged.
 - `TinyStatus` expanded with granular ACK codes (ERR_OVERFLOW, ERR_BUSY, ERR_PROCESSING,
   ERR_UNKNOWN) and moved to `src/protocol/Status.h`.  Wire values for ERR_CRC (0x01) and

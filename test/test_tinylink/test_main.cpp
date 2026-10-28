@@ -967,6 +967,185 @@ namespace {
             payload.bytes, received.bytes, sizeof(payload.bytes));
     }
 
+    void scriptWrites(FakeAdapter& adapter, const size_t* limits, size_t count)
+    {
+        adapter.scriptWrites(limits, count);
+    }
+
+    // Large enough to accept any complete frame body.
+    const size_t ALL = 1000;
+
+    uint8_t sentSequence(FakeAdapter& adapter, size_t frame)
+    {
+        uint8_t type = 0;
+        uint8_t sequence = 0xEE;
+        uint8_t payload[tinylink::packet::PACKET_MAX_PAYLOAD_SIZE] = {};
+        size_t length = 0;
+        TEST_ASSERT_TRUE(tinylink_test::decodeWrittenFrame(
+            adapter, frame, type, sequence, payload, sizeof(payload), length));
+        return sequence;
+    }
+
+    void testSendDataFailedBodyWriteDoesNotAwaitAckOrConsumeSequence()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+        const size_t script[] = { 0 };
+        scriptWrites(adapter, script, 1);
+
+        TEST_ASSERT_FALSE(link.sendData(0x40, payloadWith(1)));
+        TEST_ASSERT_FALSE(link.awaitingAck());
+        TEST_ASSERT_TRUE(link.canSend());
+        TEST_ASSERT_EQUAL_UINT32(0, adapter.outputSize());
+
+        TEST_ASSERT_TRUE(link.sendData(0x40, payloadWith(1)));
+        TEST_ASSERT_TRUE(link.awaitingAck());
+        TEST_ASSERT_EQUAL_UINT8(0, sentSequence(adapter, 0));
+    }
+
+    void testSendDataPartialBodyIsTerminatedBeforeNextFrameAndKeepsSequence()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+        const size_t script[] = { 3 };
+        scriptWrites(adapter, script, 1);
+
+        TEST_ASSERT_FALSE(link.sendData(0x40, payloadWith(1)));
+        TEST_ASSERT_FALSE(link.awaitingAck());
+        TEST_ASSERT_EQUAL_UINT32(3, adapter.outputSize());
+
+        TEST_ASSERT_TRUE(link.sendData(0x40, payloadWith(1)));
+        TEST_ASSERT_TRUE(link.awaitingAck());
+        // Fragment, recovery delimiter, then the complete frame.
+        TEST_ASSERT_EQUAL_UINT32(2, tinylink_test::writtenFrameCount(adapter));
+        TEST_ASSERT_EQUAL_UINT8(0, adapter.output()[3]);
+        TEST_ASSERT_EQUAL_UINT8(0, sentSequence(adapter, 1));
+    }
+
+    void testSendDataDelimiterFailureIsIncompleteAndRecovered()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+        const size_t script[] = { ALL, 0 };
+        scriptWrites(adapter, script, 2);
+
+        TEST_ASSERT_FALSE(link.sendData(0x40, payloadWith(1)));
+        TEST_ASSERT_FALSE(link.awaitingAck());
+        TEST_ASSERT_EQUAL_UINT32(0, tinylink_test::writtenFrameCount(adapter));
+        const size_t bodySize = adapter.outputSize();
+        TEST_ASSERT_TRUE(bodySize > 0);
+
+        TEST_ASSERT_TRUE(link.sendData(0x40, payloadWith(1)));
+        TEST_ASSERT_EQUAL_UINT32(2, tinylink_test::writtenFrameCount(adapter));
+        TEST_ASSERT_EQUAL_UINT8(0, adapter.output()[bodySize]);
+        TEST_ASSERT_EQUAL_UINT8(0, sentSequence(adapter, 1));
+    }
+
+    void testFailedRecoveryDelimiterKeepsFragmentPendingAndFailsWrite()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+        const size_t script[] = { 2, 0 };
+        scriptWrites(adapter, script, 2);
+
+        TEST_ASSERT_FALSE(link.sendData(0x40, payloadWith(1)));
+        TEST_ASSERT_FALSE(link.sendData(0x40, payloadWith(1)));
+        TEST_ASSERT_FALSE(link.awaitingAck());
+        TEST_ASSERT_EQUAL_UINT32(2, adapter.outputSize());
+
+        TEST_ASSERT_TRUE(link.sendData(0x40, payloadWith(1)));
+        TEST_ASSERT_EQUAL_UINT8(0, sentSequence(adapter, 1));
+    }
+
+    void testSendAckPropagatesFailedAndPartialWrites()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+
+        const size_t failed[] = { 0 };
+        scriptWrites(adapter, failed, 1);
+        TEST_ASSERT_FALSE(link.sendAck());
+
+        const size_t partial[] = { 2 };
+        scriptWrites(adapter, partial, 1);
+        TEST_ASSERT_FALSE(link.sendAck());
+
+        const size_t noDelimiter[] = { ALL, 0 };
+        adapter.clearOutput();
+        scriptWrites(adapter, noDelimiter, 2);
+        TEST_ASSERT_FALSE(link.sendAck());
+
+        adapter.clearOutput();
+        TEST_ASSERT_TRUE(link.sendAck());
+    }
+
+    void testSendLogPropagatesWriteFailureWithoutConsumingSequence()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        TEST_ASSERT_TRUE(connectPeer(adapter, link));
+
+        const size_t failed[] = { 0 };
+        scriptWrites(adapter, failed, 1);
+        TEST_ASSERT_FALSE(link.sendLog(tinylink::LogLevel::INFO, 7, "x"));
+        TEST_ASSERT_EQUAL_UINT32(0, adapter.outputSize());
+
+        const size_t noDelimiter[] = { ALL, 0 };
+        scriptWrites(adapter, noDelimiter, 2);
+        TEST_ASSERT_FALSE(link.sendLog(tinylink::LogLevel::INFO, 7, "x"));
+        adapter.clearOutput();
+
+        TEST_ASSERT_TRUE(link.sendLog(tinylink::LogLevel::INFO, 7, "x"));
+        // The stale body is terminated first, so the log is the second frame.
+        TEST_ASSERT_EQUAL_UINT8(0, sentSequence(adapter, 1));
+    }
+
+    void testBeginReportsWriteResultAndKeepsConnectingForRetry()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        const size_t failed[] = { 0 };
+        scriptWrites(adapter, failed, 1);
+        TEST_ASSERT_FALSE(link.begin());
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::ConnectionState::Connecting),
+            static_cast<int>(link.connectionState()));
+
+        adapter.advanceTime(1000);
+        link.update();
+        TEST_ASSERT_EQUAL_UINT32(1, tinylink_test::writtenFrameCount(adapter));
+
+        FakeAdapter okAdapter;
+        Link okLink(okAdapter);
+        TEST_ASSERT_TRUE(okLink.begin());
+    }
+
+    void testHandshakeRequestConnectsOnlyAfterResponseIsWritten()
+    {
+        FakeAdapter adapter;
+        Link link(adapter);
+        link.onHandshakeReceived(onHandshake);
+        const size_t partial[] = { 2 };
+        scriptWrites(adapter, partial, 1);
+        TEST_ASSERT_TRUE(tinylink_test::queueHandshake(
+            adapter, tinylink::HandshakeKind::Request));
+        link.update();
+        TEST_ASSERT_FALSE(link.connected());
+        TEST_ASSERT_EQUAL(
+            static_cast<int>(tinylink::ConnectionState::Inactive),
+            static_cast<int>(link.connectionState()));
+
+        TEST_ASSERT_TRUE(tinylink_test::queueHandshake(
+            adapter, tinylink::HandshakeKind::Request));
+        link.update();
+        TEST_ASSERT_TRUE(link.connected());
+    }
+
     void testClosedTransportRejectsWritesAndDoesNotBlockRecovery()
     {
         FakeAdapter adapter;
@@ -1166,6 +1345,14 @@ int main()
     RUN_TEST(testReceiveOverflowDiscardsThroughDelimiterThenRecovers);
     RUN_TEST(testMaximumSupportedApplicationPayloadCanBeSentAndReceived);
     RUN_TEST(testClosedTransportRejectsWritesAndDoesNotBlockRecovery);
+    RUN_TEST(testSendDataFailedBodyWriteDoesNotAwaitAckOrConsumeSequence);
+    RUN_TEST(testSendDataPartialBodyIsTerminatedBeforeNextFrameAndKeepsSequence);
+    RUN_TEST(testSendDataDelimiterFailureIsIncompleteAndRecovered);
+    RUN_TEST(testFailedRecoveryDelimiterKeepsFragmentPendingAndFailsWrite);
+    RUN_TEST(testSendAckPropagatesFailedAndPartialWrites);
+    RUN_TEST(testSendLogPropagatesWriteFailureWithoutConsumingSequence);
+    RUN_TEST(testBeginReportsWriteResultAndKeepsConnectingForRetry);
+    RUN_TEST(testHandshakeRequestConnectsOnlyAfterResponseIsWritten);
     RUN_TEST(testBeginWhileTransportClosedRetriesOnceAvailable);
     RUN_TEST(testResetClearsRuntimeStateButPreservesCallbacksTimeoutAndStats);
     RUN_TEST(testResetCancelsPendingAckAndDiscardsPartialReceiveFrame);
