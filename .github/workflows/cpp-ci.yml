@@ -83,4 +83,3 @@ jobs:
           void loop(){ link.update(); }
           EOF
           pio ci --lib="." --board=esp01_1m verify_esp.cpp
-

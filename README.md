@@ -21,6 +21,22 @@
 
 - **Multi-Platform**: Native adapters for **Arduino**, **Linux (POSIX)**, **Windows (Win32)**, **ESP-IDF**, and **STM32 HAL**.
 
+## Adapter write results
+
+Every built-in adapter's `write()` methods return `tinylink::TinyWriteResult`, with a
+`TinyWriteStatus` of `Complete`, `Partial`, `Failed`, or `ZeroLength` and a `bytesWritten`
+count. A zero-length request is reported separately and does not call the platform writer;
+partial results preserve the number of bytes accepted. Existing calls that ignore the return
+value continue to compile, while custom adapters and overrides must update their write methods'
+return type.
+
+TinyLink send methods report whether the complete delimited frame was accepted. Incomplete writes
+are not resumed: `sendData()` returns false without consuming its sequence or entering
+the awaiting-ACK state, and `begin()` returns false while remaining in `Connecting` so the
+handshake can retry. Because bytes from a partial frame may already be on the wire, do not retry
+on that stream until it is synchronized again: recover/reopen and flush the transport endpoints, or let the
+receiver's inter-byte timeout discard the incomplete frame before sending another one.
+
 ---
 
 ## 🛠 Installation
@@ -35,7 +51,15 @@
 
 ### 1. Define your Data
 
-Both devices must share an identical `struct` with identical size that is ensured by `__attribute__((packed))`.
+TinyLink treats a consumer-defined payload as an opaque sequence of bytes and requires its type
+to be trivially copyable before copying its object representation. This is only a minimum
+object-safety requirement: raw object memory is not inherently a portable wire format.
+
+Peers must agree on the payload layout. Raw object representations can differ across platforms
+because of padding, endianness, alignment, enum representation, or ABI. If peers may differ in
+any of these, serialize fields explicitly into a defined wire format and deserialize them on
+receipt. Packing a structure can control some layout details on a given compiler, but does not
+make its object representation portable.
 
 ```cpp
 struct MyData {
@@ -262,10 +286,10 @@ failed or partial output, without consuming a sequence number or entering `AWAIT
 Monitor link health in real-time to diagnose wiring issues:
 
 ```cpp
-const TinyStats& stats = link.getStats();
-Serial.print("Packets: "); Serial.println(stats.packets);
-Serial.print("CRC Errors: "); Serial.println(stats.crcErrs);
-Serial.print("Timeouts: "); Serial.println(stats.timeouts);
+const Stats stats = link.stats();
+Serial.print("Packets: "); Serial.println(stats.packetsReceived);
+Serial.print("Checksum Errors: "); Serial.println(stats.checksumMismatches);
+Serial.print("ACK Timeouts: "); Serial.println(stats.ackTimeouts);
 ```
 
 ## Adapter Write Results
@@ -370,6 +394,19 @@ dbg.level = 1;
 tinylink::debugmessage_set_text(dbg, "boot complete");
 link.send(message_type_to_wire(tinylink::MessageType::Debug), dbg);
 ```
+
+## Testing
+
+Run the native unit suite and the dedicated payload compile-contract checks:
+
+```sh
+pio test -e native
+python scripts/check_payload_compile_contract.py
+```
+
+The compile-contract check uses a native GNU or Clang C++11 compiler. It verifies that a valid
+payload, including a 64-byte payload at TinyLink's maximum, compiles, and that a payload with a
+non-trivial destructor fails specifically at TinyLink's trivially-copyable assertion.
 
 ## 📜 License
 This project is licensed under the MIT License.
