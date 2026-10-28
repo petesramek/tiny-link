@@ -559,56 +559,6 @@ public:
             } else {
                 _connectionState = ConnectionState::Inactive;
             }
-            consume_byte(static_cast<uint8_t>(input));
-        }
-    }
-
-    /** @brief Return whether a compatible connection is established. */
-    bool connected() const { return is_connected(_connectionState); }
-
-    /** @brief Return stable connection lifecycle state. */
-    ConnectionState connectionState() const { return _connectionState; }
-
-    /** @brief Return whether one acknowledged transmission is pending. */
-    bool awaitingAck() const { return is_awaiting_ack(_transmitState); }
-
-    /** @brief Return whether the engine can send another application frame. */
-    bool canSend() const { return can_send(_connectionState, _transmitState); }
-
-    /** @brief Return a copy of current local telemetry counters. */
-    Stats stats() const { return _stats; }
-
-    /** @brief Reset all local telemetry counters. */
-    void clearStats() { _stats.clear(); }
-
-    /** @brief Return whether a new application payload is available. */
-    bool available() const { return _hasNew; }
-
-    /** @brief Return the latest application payload and clear availability. */
-    T read()
-    {
-        _hasNew = false;
-        return _mailbox;
-    }
-
-    /** @brief Clear the application payload availability flag. */
-    void flush() { _hasNew = false; }
-
-    /**
-     * @brief Send one application payload and await its correlated ACK.
-     *
-     * Incomplete frames are not resumed. A failed or partial write returns
-     * false without consuming a transmit sequence or entering AwaitingAck.
-     * Resynchronize the transport before attempting another frame.
-     *
-     * Reserved internal message-type bytes are rejected. The object bytes are
-     * sent unchanged and therefore require an application-defined portability
-     * contract when peers use different platforms or ABIs.
-     */
-    bool sendData(uint8_t type, const T& payload)
-    {
-        if (!canSend() || is_reserved_message_type(type)) {
-            return false;
         }
 
         if (_handshakeEnabled &&
